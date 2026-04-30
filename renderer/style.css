@@ -1,0 +1,156 @@
+/* claude-says — renderer styles
+ * The window is transparent; the body's background MUST stay transparent.
+ * Only the character + UI panels are visible. */
+
+html, body {
+  margin: 0; padding: 0;
+  background: transparent !important;
+  width: 100vw; height: 100vh;
+  overflow: hidden;
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  color: #2a1f12;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+/* The whole stage is the drag handle (except elements marked .no-drag) */
+#stage {
+  position: relative;
+  width: 100%; height: 100%;
+}
+
+#scene {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  -webkit-user-drag: none;
+  /* Transparent regions of the SVG should NOT catch mouse events.
+     Only the painted character pixels (and controls) catch clicks; the rest
+     of the window passes events through to the desktop below via the
+     setIgnoreMouseEvents IPC toggle. */
+  pointer-events: none;
+}
+
+/* Character paint catches mouse events on its visible (painted) pixels only. */
+#character path,
+#character ellipse,
+#character circle,
+#character g {
+  pointer-events: visiblePainted;
+}
+
+/* The character SVG should be the only opaque thing — outline is crisp */
+#scene * { -webkit-user-drag: none; }
+
+/* Smooth fade for the locked-and-hovering transparency effect */
+#character, #shadow {
+  transition: opacity 0.18s ease;
+}
+body.locked.hovering #character { opacity: 0.50; }
+body.locked.hovering #shadow    { opacity: 0.04; }
+
+/* ---------- Controls (top-right) ---------- */
+
+#controls {
+  position: absolute;
+  top: 6px; right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 10;
+  pointer-events: none;
+}
+/* When unlocked, the controls must catch the cursor even while invisible —
+   otherwise the hit-test can never see 'controls' and they fade out the
+   moment you try to move toward them. */
+body:not(.locked) #controls { pointer-events: auto; }
+/* Controls only appear when the character is UNLOCKED and the cursor is on him */
+body.hovering:not(.locked) #controls,
+#controls.show {
+  opacity: 0.96;
+}
+#controls button {
+  width: 26px; height: 26px;
+  border: 1.5px solid #1a1a1a;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+  display: grid; place-items: center;
+  font-family: inherit;
+  box-shadow: 1px 1px 0 #1a1a1a;
+  transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.12s;
+}
+#controls button:hover { background: white; }
+#controls button:active {
+  transform: translate(1px, 1px);
+  box-shadow: 0 0 0 #1a1a1a;
+}
+
+/* ---------- Settings panel ---------- */
+
+#settingsPanel {
+  position: absolute;
+  top: 38px; right: 6px;
+  width: 200px;
+  background: rgba(245, 239, 228, 0.97);
+  border: 2px solid #1a1a1a;
+  border-radius: 8px;
+  padding: 10px 12px 12px;
+  font-size: 12px;
+  box-shadow: 2px 2px 0 #1a1a1a;
+  z-index: 11;
+}
+#settingsPanel.hidden { display: none; }
+#settingsPanel h3 {
+  margin: 8px 0 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6a5644;
+  font-weight: 600;
+  font-family: inherit;
+}
+#settingsPanel h3:first-child { margin-top: 0; }
+#settingsPanel select,
+#settingsPanel input[type="range"] {
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid #1a1a1a;
+  border-radius: 4px;
+  background: white;
+  box-sizing: border-box;
+}
+#settingsPanel input[type="range"] { padding: 0; }
+#settingsPanel label.check {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; cursor: pointer;
+}
+#settingsPanel label.check input { width: auto; margin: 0; }
+#settingsPanel .hint-tiny {
+  font-size: 10px; color: #8a7a65; margin-top: 2px; font-style: italic;
+}
+
+/* ---------- States ---------- */
+
+/* While dragging: ground shadow expands, character feels "lifted" */
+body.dragging #shadow {
+  opacity: 0.18;
+  transform: translateY(8px);
+  transform-origin: center;
+}
+body.dragging { cursor: grabbing; }
+
+/* Muted state visual indicator */
+body.muted #muteBtn::after {
+  content: "";
+  position: absolute;
+  width: 22px; height: 1.5px;
+  background: #cc0000;
+  transform: rotate(-22deg);
+}

@@ -1,0 +1,37 @@
+{
+  "name": "claude-says",
+  "version": "0.1.0",
+  "description": "A draggable, animated Claude that speaks Claude Code responses with tone-driven expressions",
+  "main": "main.js",
+  "license": "MIT",
+  "homepage": "https://github.com/SkyeShark/claudes-body",
+  "scripts": {
+    "start": "electron .",
+    "install-hook": "node install.js",
+    "uninstall-hook": "node install.js --remove",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder -mwl"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.claudesays.app",
+    "productName": "Claude Says",
+    "files": [
+      "main.js",
+      "preload.js",
+      "hook.js",
+      "install.js",
+      "renderer/**/*",
+      "package.json",
+      "LICENSE"
+    ],
+    "win":   { "target": "nsis"     },
+    "mac":   { "target": "dmg",  "category": "public.app-category.utilities" },
+    "linux": { "target": ["AppImage", "deb"], "category": "Utility" }
+  }
+}

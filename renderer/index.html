@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';">
+  <title>claude says</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="stage">
+
+    <!-- The character. Built procedurally by character.js. -->
+    <svg id="scene" viewBox="0 0 640 720" xmlns="http://www.w3.org/2000/svg">
+      <ellipse id="shadow" cx="320" cy="660" rx="150" ry="14" fill="#000" opacity="0.10"/>
+      <g id="character"></g>
+    </svg>
+
+    <!-- Top-right control strip — appears on hover -->
+    <div id="controls" class="no-drag" data-no-drag="1">
+      <button id="muteBtn"     title="Mute / unmute">🔊</button>
+      <button id="skipBtn"     title="Skip current line">⏭</button>
+      <button id="settingsBtn" title="Settings">⚙</button>
+      <button id="minBtn"      title="Minimize">➖</button>
+      <button id="quitBtn"     title="Quit">✕</button>
+    </div>
+
+    <!-- Settings panel — toggled by the gear -->
+    <div id="settingsPanel" class="hidden no-drag" data-no-drag="1">
+      <h3>Voice mode</h3>
+      <select id="voiceMode">
+        <option value="auto">Auto</option>
+        <option value="female">Female</option>
+        <option value="male">Male</option>
+      </select>
+
+      <h3>Voice</h3>
+      <select id="voiceSelect"><option value="">— default —</option></select>
+
+      <h3>Length</h3>
+      <select id="lengthCap">
+        <option value="200">Short  (200 chars)</option>
+        <option value="320" selected>Medium (320 chars)</option>
+        <option value="600">Long   (600 chars)</option>
+        <option value="0">Full message</option>
+      </select>
+
+      <h3>Speech rate</h3>
+      <input type="range" id="rate" min="0.7" max="1.3" step="0.02" value="0.96">
+
+      <h3>Size</h3>
+      <select id="sizeSelect">
+        <option value="small">Small</option>
+        <option value="medium" selected>Medium</option>
+        <option value="large">Large</option>
+      </select>
+
+      <h3>Mode</h3>
+      <label class="check"><input type="checkbox" id="lockToggle"> Lock (click-through)</label>
+      <div class="hint-tiny">Hotkey: Ctrl+Shift+L</div>
+    </div>
+
+  </div>
+
+  <script src="character.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
