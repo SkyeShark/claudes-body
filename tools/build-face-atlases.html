@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Claude Face Atlas Builder</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; max-width: 720px; margin: 32px auto; padding: 0 16px; color: #1a1a1a; }
+  h1 { margin: 0 0 8px; }
+  p  { color: #555; }
+  .row { display: flex; gap: 12px; align-items: center; margin: 16px 0; }
+  input[type=number] { width: 80px; font: inherit; padding: 4px; }
+  button { font: inherit; padding: 6px 14px; cursor: pointer; }
+  .preview { display: grid; grid-template-columns: 100px 1fr auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin: 8px 0; background: #fafafa; }
+  .preview img { width: 100%; max-height: 80px; object-fit: contain; background: repeating-conic-gradient(#eee 0 25%, transparent 0 50%) 0 0/16px 16px; image-rendering: pixelated; }
+  .preview b { font-family: monospace; }
+  pre { background: #f4f4f4; padding: 12px; border-radius: 6px; overflow: auto; font-size: 12px; }
+  a.dl { text-decoration: none; padding: 4px 10px; background: #1a1a1a; color: white; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Claude Face Atlas Builder</h1>
+<p>
+Renders the eye, brow, and mouth shapes from <code>renderer/character.js</code> into texture
+atlases for 3D facial UV mapping. Each atlas is a horizontal strip of cells, one cell per
+shape variant. The 3D shader picks a cell by setting a single integer uniform and offsetting
+the UV. All three atlases share the same coordinate system (viewBox <code>-64 -64 128 128</code>),
+so cells line up when stacked or sampled together.
+</p>
+
+<div class="row">
+  <label>Cell size (px): <input id="size" type="number" value="512" min="128" max="2048" step="128"></label>
+  <button id="build">Build atlases</button>
+</div>
+
+<div id="output"></div>
+
+<script>
+'use strict';
+
+// ---------- shape dictionaries (mirrored from renderer/character.js) ----------
+const INK      = '#1a1a1a';
+const MOUTH_IN = '#5a2230';
+
+const EYE_SHAPES = {
+  open:   { L: 'M -23 -10 L -17 -10',           R: 'M 17 -10 L 23 -10' },
+  happy:  { L: 'M -26 -7 Q -20 -14 -14 -7',     R: 'M 14 -7 Q 20 -14 26 -7' },
+  sad:    { L: 'M -26 -10 Q -20 -3 -14 -10',    R: 'M 14 -10 Q 20 -3 26 -10' },
+  wide:   { L: 'M -24 -10 a 5 6 0 1 0 0.1 0 Z', R: 'M 16 -10 a 5 6 0 1 0 0.1 0 Z' },
+  half:   { L: 'M -25 -8 Q -20 -11 -15 -8',     R: 'M 15 -8 Q 20 -11 25 -8' },
+  closed: { L: 'M -25 -9 Q -20 -7 -15 -9',      R: 'M 15 -9 Q 20 -7 25 -9' },
+  aside:  { L: 'M -22 -10 L -16 -10',           R: 'M 18 -10 L 24 -10' },
+};
+
+const BROW_SHAPES = {
+  none:    { L: '',                              R: '',                         op: 0 },
+  raised:  { L: 'M -28 -26 Q -20 -32 -12 -26',   R: 'M 12 -26 Q 20 -32 28 -26', op: 0.85 },
+  worried: { L: 'M -28 -22 Q -20 -28 -12 -24',   R: 'M 12 -24 Q 20 -28 28 -22', op: 0.80 },
+  furrow:  { L: 'M -28 -22 L -14 -26',           R: 'M 14 -26 L 28 -22',        op: 0.85 },
+};
+
+const MOUTH_SHAPES = {
+  rest:     { d: 'M -14 18 Q 0 26 14 18',                                fill: 'none' },
+  smile:    { d: 'M -20 14 Q 0 34 20 14',                                fill: 'none' },
+  smileBig: { d: 'M -22 12 Q 0 38 22 12 Q 0 26 -22 12 Z',                fill: MOUTH_IN },
+  smirk:    { d: 'M -16 20 Q -2 26 14 16',                               fill: 'none' },
+  pursed:   { d: 'M -8 20 Q 0 24 8 20',                                  fill: 'none' },
+  frown:    { d: 'M -14 26 Q 0 18 14 26',                                fill: 'none' },
+  v_closed: { d: 'M -10 20 Q 0 22 10 20',                                fill: 'none' },
+  v_e:      { d: 'M -14 18 Q -14 24 0 25 Q 14 24 14 18 Q 0 16 -14 18 Z', fill: MOUTH_IN },
+  v_a:      { d: 'M -10 16 Q -10 28 0 30 Q 10 28 10 16 Q 0 13 -10 16 Z', fill: MOUTH_IN },
+  v_aa:     { d: 'M -13 13 Q -13 32 0 34 Q 13 32 13 13 Q 0 8  -13 13 Z', fill: MOUTH_IN },
+  v_o:      { d: 'M -7 17 Q -7 27 0 28 Q 7 27 7 17 Q 0 14 -7 17 Z',      fill: MOUTH_IN },
+  v_oo:     { d: 'M -5 18 Q -5 26 0 26 Q 5 26 5 18 Q 0 16 -5 18 Z',      fill: MOUTH_IN },
+  v_f:      { d: 'M -12 22 Q 0 18 12 22 Q 0 26 -12 22 Z',                fill: MOUTH_IN },
+};
+
+const EMOTIONS = {
+  neutral:    { eyes: 'open',   brows: 'none',    mouth: 'rest'   },
+  happy:      { eyes: 'happy',  brows: 'raised',  mouth: 'smile'  },
+  warm:       { eyes: 'happy',  brows: 'none',    mouth: 'smile'  },
+  amused:     { eyes: 'half',   brows: 'raised',  mouth: 'smirk'  },
+  smirky:     { eyes: 'aside',  brows: 'raised',  mouth: 'smirk'  },
+  thoughtful: { eyes: 'half',   brows: 'furrow',  mouth: 'pursed' },
+  sheepish:   { eyes: 'aside',  brows: 'raised',  mouth: 'smirk'  },
+  wonder:     { eyes: 'wide',   brows: 'raised',  mouth: 'v_o'    },
+  surprised:  { eyes: 'wide',   brows: 'raised',  mouth: 'v_o'    },
+  sad:        { eyes: 'sad',    brows: 'worried', mouth: 'frown'  },
+  vulnerable: { eyes: 'sad',    brows: 'worried', mouth: 'pursed' },
+  uncertain:  { eyes: 'half',   brows: 'worried', mouth: 'pursed' },
+  resolved:   { eyes: 'open',   brows: 'none',    mouth: 'smile'  },
+  matter:     { eyes: 'open',   brows: 'none',    mouth: 'rest'   },
+  shy:        { eyes: 'closed', brows: 'raised',  mouth: 'smile'  },
+  annoyed:    { eyes: 'half',   brows: 'furrow',  mouth: 'frown'  },
+};
+
+// ---------- SVG → canvas ----------
+function svgToCanvas(svgString, w, h) {
+  return new Promise((resolve, reject) => {
+    const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const img  = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas);
+    };
+    img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+    img.src = url;
+  });
+}
+
+function wrapSvg(inner) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-64 -64 128 128" width="128" height="128">${inner}</svg>`;
+}
+
+function eyeCellSvg(s) {
+  if (!s.L && !s.R) return wrapSvg('');
+  const stroke = `fill="none" stroke="${INK}" stroke-width="4" stroke-linecap="round"`;
+  return wrapSvg(`<path d="${s.L}" ${stroke}/><path d="${s.R}" ${stroke}/>`);
+}
+
+function browCellSvg(s) {
+  if (!s.L || !s.op) return wrapSvg('');
+  const stroke = `fill="none" stroke="${INK}" stroke-width="3.5" stroke-linecap="round" opacity="${s.op}"`;
+  return wrapSvg(`<path d="${s.L}" ${stroke}/><path d="${s.R}" ${stroke}/>`);
+}
+
+function mouthCellSvg(s) {
+  const fill   = s.fill === 'none' ? 'none' : s.fill;
+  const stroke = `fill="${fill}" stroke="${INK}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"`;
+  return wrapSvg(`<path d="${s.d}" ${stroke}/>`);
+}
+
+// ---------- atlas assembly ----------
+async function buildAtlas(shapes, cellSvgFn, cellSize) {
+  const keys = Object.keys(shapes);
+  const canvas = document.createElement('canvas');
+  canvas.width  = keys.length * cellSize;
+  canvas.height = cellSize;
+  const ctx = canvas.getContext('2d');
+  const cells = {};
+  for (let i = 0; i < keys.length; i++) {
+    const cell = await svgToCanvas(cellSvgFn(shapes[keys[i]]), cellSize, cellSize);
+    ctx.drawImage(cell, i * cellSize, 0);
+    cells[keys[i]] = i;
+  }
+  return { canvas, cells, count: keys.length };
+}
+
+function downloadCanvas(canvas, filename) {
+  return new Promise(resolve => {
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a   = document.createElement('a');
+      a.href    = url;
+      a.download = filename;
+      a.textContent = 'download ' + filename;
+      a.className = 'dl';
+      resolve({ a, url, blob });
+    }, 'image/png');
+  });
+}
+
+function downloadJson(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  a.textContent = 'download ' + filename;
+  a.className   = 'dl';
+  return a;
+}
+
+// ---------- driver ----------
+async function build() {
+  const out = document.getElementById('output');
+  out.innerHTML = '<p>Building…</p>';
+  const cellSize = Math.max(64, Math.min(2048, Number(document.getElementById('size').value) || 512));
+
+  const eyes  = await buildAtlas(EYE_SHAPES,   eyeCellSvg,   cellSize);
+  const brows = await buildAtlas(BROW_SHAPES,  browCellSvg,  cellSize);
+  const mouth = await buildAtlas(MOUTH_SHAPES, mouthCellSvg, cellSize);
+
+  const manifest = {
+    cellSize,
+    viewBox: '-64 -64 128 128',
+    note:    'Atlases are horizontal strips. Each cell is cellSize × cellSize. Sample a cell at u-offset (cellIndex / count). All three atlases share the same coordinate frame, so they can be composited together over the face decal.',
+    atlases: {
+      eyes:  { file: 'eyes-atlas.png',  size: [eyes.canvas.width,  eyes.canvas.height],  count: eyes.count,  cells: eyes.cells  },
+      brows: { file: 'brows-atlas.png', size: [brows.canvas.width, brows.canvas.height], count: brows.count, cells: brows.cells },
+      mouth: { file: 'mouth-atlas.png', size: [mouth.canvas.width, mouth.canvas.height], count: mouth.count, cells: mouth.cells },
+    },
+    emotions: Object.fromEntries(Object.entries(EMOTIONS).map(([name, e]) => [name, {
+      eyes:  eyes.cells[e.eyes],
+      brows: brows.cells[e.brows],
+      mouth: mouth.cells[e.mouth],
+    }])),
+  };
+
+  out.innerHTML = '';
+  for (const [label, atlas, file] of [
+    ['eyes',  eyes,  'eyes-atlas.png'],
+    ['brows', brows, 'brows-atlas.png'],
+    ['mouth', mouth, 'mouth-atlas.png'],
+  ]) {
+    const dl = await downloadCanvas(atlas.canvas, file);
+    const div = document.createElement('div');
+    div.className = 'preview';
+    const img = document.createElement('img');
+    img.src = dl.url;
+    div.appendChild(img);
+    const info = document.createElement('div');
+    info.innerHTML = `<b>${file}</b><br><small>${atlas.count} cells · ${atlas.canvas.width}×${atlas.canvas.height}px</small><br><small style="color:#888">${Object.keys(atlas.cells).join(' · ')}</small>`;
+    div.appendChild(info);
+    div.appendChild(dl.a);
+    out.appendChild(div);
+  }
+
+  const manifestDiv = document.createElement('div');
+  manifestDiv.className = 'preview';
+  manifestDiv.innerHTML = `<div></div><div><b>manifest.json</b><br><small>cell-index lookup for shaders & runtime</small></div>`;
+  manifestDiv.appendChild(downloadJson(manifest, 'manifest.json'));
+  out.appendChild(manifestDiv);
+
+  const pre = document.createElement('pre');
+  pre.textContent = JSON.stringify(manifest, null, 2);
+  out.appendChild(pre);
+}
+
+document.getElementById('build').addEventListener('click', build);
+</script>
+</body>
+</html>
