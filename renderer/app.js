@@ -7,10 +7,19 @@
 
 const $ = (id) => document.getElementById(id);
 
-// ---------- character ----------
-const claude = createClaude($('character'));
-// note: we start the idle tick AFTER assemble() resolves so its
-// per-frame transforms don't fight the assembly transition.
+// ---------- character backend (SVG or VRM) ----------
+// `claude` is assigned inside boot(), once we know which backend to spin up.
+// User-facing event handlers reference it lazily, so this works as long as
+// the user can't interact before assemble() resolves — which is the case,
+// since the window is locked + invisible until assembly starts.
+let claude;
+async function makeBackend() {
+  if (window.RENDERER === 'vrm' && window.ClaudeBackend && window.ClaudeBackend.createVrmClaude) {
+    document.body.classList.add('renderer-vrm');
+    return await window.ClaudeBackend.createVrmClaude($('vrm-stage'));
+  }
+  return createClaude($('character'));
+}
 
 // ---------- settings (persisted via main process) ----------
 const DEFAULTS = {
@@ -517,6 +526,13 @@ function applySettingsToUI() {
   // wait briefly for voices to populate
   setTimeout(refreshVoices, 250);
 
+  try {
+    claude = await makeBackend();
+  } catch (e) {
+    console.error('VRM backend failed, falling back to SVG:', e);
+    document.body.classList.remove('renderer-vrm');
+    claude = createClaude($('character'));
+  }
   await claude.assemble();
   claude.startIdle();
 

@@ -27,11 +27,27 @@
       "hook.js",
       "install.js",
       "renderer/**/*",
+      "assets/**/*",
       "package.json",
       "LICENSE"
     ],
-    "win":   { "target": "nsis"     },
-    "mac":   { "target": "dmg",  "category": "public.app-category.utilities" },
-    "linux": { "target": ["AppImage", "deb"], "category": "Utility" }
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    }
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.5.2",
+    "three": "^0.184.0"
   }
 }

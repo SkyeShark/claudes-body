@@ -3,18 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' blob:; img-src 'self' data: blob:; connect-src 'self' blob: file:; worker-src 'self' blob:;">
   <title>claude says</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="stage">
 
-    <!-- The character. Built procedurally by character.js. -->
+    <!-- The character. Built procedurally by character.js (SVG mode) or
+         vrm-character.js (3D VRM mode, selected via window.RENDERER). -->
     <svg id="scene" viewBox="0 0 640 720" xmlns="http://www.w3.org/2000/svg">
       <ellipse id="shadow" cx="320" cy="660" rx="150" ry="14" fill="#000" opacity="0.10"/>
       <g id="character"></g>
     </svg>
+    <div id="vrm-stage"></div>
 
     <!-- Top-right control strip — appears on hover -->
     <div id="controls" class="no-drag" data-no-drag="1">
@@ -62,7 +64,11 @@
 
   </div>
 
+  <!-- Renderer toggle: 'vrm' for 3D, 'svg' for the original drawn version.
+       VRM mode requires the bundled three.js + three-vrm script below. -->
+  <script src="renderer-mode.js"></script>
   <script src="character.js"></script>
+  <script src="vrm-character.bundle.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -349,6 +349,24 @@ function startHttpServer() {
       return;
     }
 
+    // Returns a PNG screenshot of the current renderer state. Used for
+    // iterating on the 3D rig from the assistant side without a human in
+    // the loop — capture, inspect via image read, adjust, repeat.
+    if (req.method === 'GET' && req.url === '/screenshot') {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        res.writeHead(503); res.end('no window'); return;
+      }
+      mainWindow.webContents.capturePage().then(image => {
+        const png = image.toPNG();
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length });
+        res.end(png);
+      }).catch(err => {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end(String(err && err.message));
+      });
+      return;
+    }
+
     res.writeHead(404);
     res.end();
   });

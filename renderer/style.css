@@ -31,6 +31,21 @@ html, body {
   pointer-events: none;
 }
 
+/* 3D backend: WebGL canvas fills the window; VRM renderer drops its own
+   <canvas> in here. Transparent so the floating-character feel survives. */
+#vrm-stage {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  display: none;
+}
+body.renderer-vrm #vrm-stage { display: block; }
+body.renderer-vrm #scene     { display: none; }
+#vrm-stage canvas {
+  width: 100%; height: 100%;
+  pointer-events: visiblePainted;
+}
+
 /* Character paint catches mouse events on its visible (painted) pixels only. */
 #character path,
 #character ellipse,
