@@ -170,13 +170,14 @@ function autoWeight(rootScene, vrm) {
     // Cache bone world positions (T-pose is current state).
     sm.updateMatrixWorld(true);
     bones.forEach(b => b.updateMatrixWorld(true));
-    // Recompute inverseBindMatrices for the CURRENT pose. The exported file
-    // only weighted to bone[0], so the inverses for other bones are likely
-    // identity or stale — when we suddenly assign a vertex to handL, three.js
-    // multiplies by garbage and the vertex flies off / collapses to origin.
-    // Treating the current pose as the new bind pose fixes that.
+    // Recompute inverseBindMatrices treating the CURRENT pose as the new
+    // bind. The skinning shader does `vertex_world = boneMat * invBind *
+    // vertex_local`, where vertex_local is in mesh-local space. So:
+    //   invBind = inverse(bone.matrixWorld) * mesh.matrixWorld
+    // The earlier version missed the mesh.matrixWorld factor, which is why
+    // re-weighting at bind-pose still distorted the mesh.
     skel.boneInverses.forEach((m, i) => {
-      m.copy(bones[i].matrixWorld).invert();
+      m.copy(bones[i].matrixWorld).invert().multiply(sm.matrixWorld);
     });
     const bonePos = candIdx.map(i => bones[i].getWorldPosition(new THREE.Vector3()));
 
@@ -279,25 +280,16 @@ export async function createVrmClaude(canvasParent) {
   // optimizer can run later when the model is properly bound.
 
   scene.add(vrm.scene);
+  // Character has its tail pointing along world +Z, so we rotate 180° to
+  // bring the FRONT of the body toward the camera (default three.js camera
+  // looks down -Z, so we want the face on +Z after the rotation).
   vrm.scene.rotation.y = Math.PI;
   vrm.scene.position.y = 0;
 
-  // The starburst mane was authored as a separate mesh; reparent under
-  // the head bone so it follows the head wherever it goes.
-  const headBone = vrm.humanoid?.getNormalizedBoneNode('head')
-                ?? vrm.humanoid?.getBoneNode?.('head');
-  const manes = [];
-  gltf.scene.traverse((obj) => {
-    if (obj.isMesh && /claudeburstmane|burst|mane/i.test(obj.name)) manes.push(obj);
-  });
-  if (headBone && manes.length) {
-    for (const m of manes) {
-      headBone.attach(m);
-      m.position.set(0, 0, 0);
-      m.rotation.set(0, 0, 0);
-      m.scale.set(1, 1, 1);
-    }
-  }
+  // The starburst mane is a separate SkinnedMesh; we leave it parented at
+  // the scene root and let the auto-weight pass bind its vertices to the
+  // head bone. (Earlier we tried headBone.attach() but it broke the mesh's
+  // bind transform, doubling the head offset and floating the mane.)
 
   // Frame the camera around the (now-reparented) model.
   const box    = new THREE.Box3().setFromObject(gltf.scene);
@@ -340,9 +332,12 @@ export async function createVrmClaude(canvasParent) {
   let currentEmotion = 'neutral';
   let dragging = false;
   let isBlinking = false;
-  // Start at the rest pose (arms by sides, not the bind-pose T-shape).
-  let armSh = { L: ARM_POSES_3D.rest.L.sh, R: ARM_POSES_3D.rest.R.sh };
-  let armEl = { L: ARM_POSES_3D.rest.L.el, R: ARM_POSES_3D.rest.R.el };
+  // ARM ROTATION TEMPORARILY DISABLED: the runtime auto-weight pass is too
+  // crude to produce clean shoulder deformation, so applying any non-zero
+  // shoulder rotation tears the geometry around the joint. Leaving arms at
+  // the bind T-pose until proper Blender weight-painting lands.
+  let armSh = { L: 0, R: 0 };
+  let armEl = { L: 0, R: 0 };
 
   // --- pose application ---
   function applyArmPose(name, durationMs) {
@@ -503,10 +498,16 @@ export async function createVrmClaude(canvasParent) {
     // convert world-space rotation into the bone's local frame by
     // composing with the parent's world quaternion. This sidesteps the
     // per-bone Euler-axis confusion entirely.
-    // Sign convention found by capture: rotating around world +Z by a
-    // POSITIVE angle swings the LEFT arm DOWN; the right arm is mirrored.
-    rotateBoneAroundWorldAxis(bones.leftUpperArm,  Z_AXIS,  armSh.L * D2R + swayL);
-    rotateBoneAroundWorldAxis(bones.rightUpperArm, Z_AXIS, -armSh.R * D2R + swayR);
+    // Sign convention for the aligned skeleton: rotating around world +Z by a
+    // NEGATIVE angle swings the LEFT arm DOWN; the right arm uses the same
+    // negative sign because both arms' bind-pose Y axes point in symmetric
+    // outward directions, but the world Z rotation behaves the same way.
+    // Skip arm rotation while we have the runtime-auto-weight workaround;
+    // small idle sway only, which is too subtle to expose seam issues.
+    if (Math.abs(armSh.L) > 0.01 || Math.abs(armEl.L) > 0.01) {
+      rotateBoneAroundWorldAxis(bones.leftUpperArm,  Z_AXIS,  armSh.L * D2R + swayL);
+      rotateBoneAroundWorldAxis(bones.rightUpperArm, Z_AXIS, -armSh.R * D2R + swayR);
+    }
     // Elbow hinge: rotate around the bone's parent's local Y (which is the
     // upper-arm length axis once everything settles). Using a fixed local
     // axis here is safe because lower_arm always inherits upper_arm's frame.

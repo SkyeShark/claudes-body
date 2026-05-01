@@ -39163,7 +39163,7 @@ void main() {
       sm.updateMatrixWorld(true);
       bones.forEach((b) => b.updateMatrixWorld(true));
       skel.boneInverses.forEach((m, i) => {
-        m.copy(bones[i].matrixWorld).invert();
+        m.copy(bones[i].matrixWorld).invert().multiply(sm.matrixWorld);
       });
       const bonePos = candIdx.map((i) => bones[i].getWorldPosition(new Vector3()));
       const v = new Vector3();
@@ -39239,19 +39239,6 @@ void main() {
     scene.add(vrm.scene);
     vrm.scene.rotation.y = Math.PI;
     vrm.scene.position.y = 0;
-    const headBone = vrm.humanoid?.getNormalizedBoneNode("head") ?? vrm.humanoid?.getBoneNode?.("head");
-    const manes = [];
-    gltf.scene.traverse((obj) => {
-      if (obj.isMesh && /claudeburstmane|burst|mane/i.test(obj.name)) manes.push(obj);
-    });
-    if (headBone && manes.length) {
-      for (const m of manes) {
-        headBone.attach(m);
-        m.position.set(0, 0, 0);
-        m.rotation.set(0, 0, 0);
-        m.scale.set(1, 1, 1);
-      }
-    }
     const box = new Box3().setFromObject(gltf.scene);
     const size = new Vector3();
     box.getSize(size);
@@ -39281,8 +39268,8 @@ void main() {
     let currentEmotion = "neutral";
     let dragging = false;
     let isBlinking = false;
-    let armSh = { L: ARM_POSES_3D.rest.L.sh, R: ARM_POSES_3D.rest.R.sh };
-    let armEl = { L: ARM_POSES_3D.rest.L.el, R: ARM_POSES_3D.rest.R.el };
+    let armSh = { L: 0, R: 0 };
+    let armEl = { L: 0, R: 0 };
     function applyArmPose(name, durationMs) {
       durationMs = durationMs == null ? 700 : durationMs;
       const target = ARM_POSES_3D[name] || ARM_POSES_3D.rest;
@@ -39443,8 +39430,10 @@ void main() {
       const swayFreq = dragging ? 5 : 1.2;
       const swayL = Math.sin(t * swayFreq) * swayMag;
       const swayR = Math.sin(t * swayFreq + Math.PI) * swayMag;
-      rotateBoneAroundWorldAxis(bones.leftUpperArm, Z_AXIS, armSh.L * D2R + swayL);
-      rotateBoneAroundWorldAxis(bones.rightUpperArm, Z_AXIS, -armSh.R * D2R + swayR);
+      if (Math.abs(armSh.L) > 0.01 || Math.abs(armEl.L) > 0.01) {
+        rotateBoneAroundWorldAxis(bones.leftUpperArm, Z_AXIS, armSh.L * D2R + swayL);
+        rotateBoneAroundWorldAxis(bones.rightUpperArm, Z_AXIS, -armSh.R * D2R + swayR);
+      }
       if (bones.leftLowerArm) bones.leftLowerArm.rotation.set(0, -armEl.L * D2R, 0);
       if (bones.rightLowerArm) bones.rightLowerArm.rotation.set(0, armEl.R * D2R, 0);
       if (!isBlinking && now - lastBlinkMs > 2e3 && Math.random() < 5e-3) {

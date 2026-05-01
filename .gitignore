@@ -8,3 +8,8 @@ Thumbs.db
 .env.local
 .vscode/
 .idea/
+
+# Iteration screenshots from the rig-debug capture loop. Keep one final
+# state png in this folder if desired; the rest are throwaway debug captures.
+tools/screenshots/
+!tools/screenshots/.gitkeep
