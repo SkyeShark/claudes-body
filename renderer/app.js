@@ -95,8 +95,12 @@ const queue = [];
 let speaking = false;
 let skipRequested = false;
 let currentSpokenText = '';
+// While the welcome line is playing, defer every other speech item so
+// a Stop hook from another Claude Code project can't preempt it.
+let welcomeBlocking = false;
 
 async function processQueue() {
+  if (welcomeBlocking) return;
   if (speaking) return;
   if (queue.length === 0) return;
   speaking = true;
@@ -615,10 +619,16 @@ function applySettingsToUI() {
     // The static WAV plays instantly; no synth or IPC needed.
     claude.playAnimation('idle', { loop: true });
     claude.setEmotion('happy');
-    setTimeout(() => {
+    welcomeBlocking = true;
+    setTimeout(async () => {
       claude.playAnimation('greeting');
       const gender = settings.voiceMode === 'female' ? 'female' : 'male';
-      claude.playClip(`../assets/voices/${gender}/welcome.wav`);
+      try { await claude.playClip(`../assets/voices/${gender}/welcome.wav`); }
+      finally {
+        welcomeBlocking = false;
+        // Drain anything that arrived while we were welcoming.
+        setTimeout(processQueue, 100);
+      }
     }, 600);
 
     // Prewarm the woah WAVs so the FIRST drag doesn't pay the
