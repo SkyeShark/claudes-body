@@ -65582,6 +65582,43 @@ void main() {
       }
       return _ttsKnownAvailable;
     }
+    function chunkText(text, maxLen = 250) {
+      const sentences = text.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g) || [text];
+      const chunks = [];
+      let cur = "";
+      for (const s of sentences) {
+        const trimmed = s.trim();
+        if (!trimmed) continue;
+        if (cur.length + trimmed.length + 1 <= maxLen) {
+          cur = cur ? cur + " " + trimmed : trimmed;
+        } else {
+          if (cur) chunks.push(cur);
+          cur = trimmed;
+        }
+      }
+      if (cur) chunks.push(cur);
+      return chunks.length ? chunks : [text];
+    }
+    function playOneChunk(url, opts, ownerFinish) {
+      return new Promise((resolve) => {
+        const audio = new Audio(url);
+        audio.playbackRate = opts.rate != null ? opts.rate : 1;
+        audio.volume = opts.volume != null ? opts.volume : 1;
+        currentAudio = audio;
+        const visemeTimer = setInterval(() => {
+          if (audio.paused || audio.ended) return;
+          setMouth(Math.random() < 0.5 ? "v_e" : "v_a");
+        }, 140);
+        const cleanup = () => {
+          clearInterval(visemeTimer);
+          if (currentAudio === audio) currentAudio = null;
+          resolve();
+        };
+        audio.onended = cleanup;
+        audio.onerror = () => cleanup();
+        audio.play().catch(() => cleanup());
+      });
+    }
     let currentAudio = null;
     function speak(text, opts) {
       opts = opts || {};
@@ -65623,48 +65660,19 @@ void main() {
         const gender = opts.voicePrefs && opts.voicePrefs.gender || "male";
         if (await ttsAvailable()) {
           try {
-            const dataUrl = await window.cs.ttsSynth(text, gender);
-            if (stopRequested || currentSpeakFinish !== finish) return finish();
-            if (dataUrl) {
-              const audio = new Audio(dataUrl);
-              audio.playbackRate = opts.rate != null ? opts.rate : 1;
-              audio.volume = opts.volume != null ? opts.volume : 1;
-              currentAudio = audio;
-              const visemeTimer = setInterval(() => {
-                if (audio.paused || audio.ended) return;
-                setMouth(Math.random() < 0.5 ? "v_e" : "v_a");
-              }, 140);
-              const cleanup = () => {
-                clearInterval(visemeTimer);
-                if (currentAudio === audio) currentAudio = null;
-                finish();
-              };
-              audio.onended = cleanup;
-              audio.onerror = (e) => {
-                const err = audio.error;
-                console.warn(
-                  "[tts] audio error code=",
-                  err?.code,
-                  "msg=",
-                  err?.message,
-                  "src len=",
-                  dataUrl.length
-                );
-                cleanup();
-              };
-              try {
-                await audio.play();
-                return;
-              } catch (playErr) {
-                console.warn("[tts] play() rejected \u2014 falling back to speechSynthesis:", playErr?.message);
-                clearInterval(visemeTimer);
-                if (currentAudio === audio) currentAudio = null;
-                audio.onended = null;
-                audio.onerror = null;
-              }
-            } else {
-              console.warn("[tts] synth returned null, falling back");
+            const chunks = chunkText(text);
+            const synthP = chunks.map((c2) => window.cs.ttsSynth(c2, gender));
+            let played = false;
+            for (let i = 0; i < chunks.length; i++) {
+              if (stopRequested || currentSpeakFinish !== finish) return finish();
+              const url = await synthP[i];
+              if (stopRequested || currentSpeakFinish !== finish) return finish();
+              if (!url) continue;
+              played = true;
+              await playOneChunk(url, opts, finish);
+              if (stopRequested || currentSpeakFinish !== finish) return;
             }
+            if (played) return finish();
           } catch (e) {
             console.warn("[tts] failed, falling back:", e.message);
           }

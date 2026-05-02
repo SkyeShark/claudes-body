@@ -1326,6 +1326,51 @@ export async function createVrmClaude(canvasParent) {
     return _ttsKnownAvailable;
   }
 
+  // Split a long string at sentence boundaries into chunks ≤ maxLen.
+  // Short sentences merge together up to the cap; sentences longer
+  // than the cap are emitted as their own chunk (no hard split).
+  function chunkText(text, maxLen = 250) {
+    const sentences = text.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g) || [text];
+    const chunks = [];
+    let cur = '';
+    for (const s of sentences) {
+      const trimmed = s.trim();
+      if (!trimmed) continue;
+      if (cur.length + trimmed.length + 1 <= maxLen) {
+        cur = cur ? cur + ' ' + trimmed : trimmed;
+      } else {
+        if (cur) chunks.push(cur);
+        cur = trimmed;
+      }
+    }
+    if (cur) chunks.push(cur);
+    return chunks.length ? chunks : [text];
+  }
+
+  // Play one already-synthesized audio URL with viseme animation.
+  // Resolves when audio ends, errors, or when speak() is preempted
+  // (currentSpeakFinish becomes a different fn).
+  function playOneChunk(url, opts, ownerFinish) {
+    return new Promise((resolve) => {
+      const audio = new Audio(url);
+      audio.playbackRate = opts.rate != null ? opts.rate : 1.0;
+      audio.volume       = opts.volume != null ? opts.volume : 1.0;
+      currentAudio = audio;
+      const visemeTimer = setInterval(() => {
+        if (audio.paused || audio.ended) return;
+        setMouth(Math.random() < 0.5 ? 'v_e' : 'v_a');
+      }, 140);
+      const cleanup = () => {
+        clearInterval(visemeTimer);
+        if (currentAudio === audio) currentAudio = null;
+        resolve();
+      };
+      audio.onended = cleanup;
+      audio.onerror = () => cleanup();
+      audio.play().catch(() => cleanup());
+    });
+  }
+
   let currentAudio = null;
   function speak(text, opts) {
     opts = opts || {};
@@ -1366,45 +1411,27 @@ export async function createVrmClaude(canvasParent) {
 
       const gender = (opts.voicePrefs && opts.voicePrefs.gender) || 'male';
 
-      // Try the neural TTS first.
+      // Try the neural TTS first. Chunk the text into ~250-char
+      // sentence-bounded pieces and pipeline: kick off ALL chunk
+      // synth requests in parallel so the worker queues them, then
+      // play each in order as it becomes ready. Time-to-first-audio
+      // drops from "synth full text" (15-20s for long replies) to
+      // "synth first chunk" (~2-3s).
       if (await ttsAvailable()) {
         try {
-          const dataUrl = await window.cs.ttsSynth(text, gender);
-          if (stopRequested || currentSpeakFinish !== finish) return finish();
-          if (dataUrl) {
-            const audio = new Audio(dataUrl);
-            audio.playbackRate = opts.rate != null ? opts.rate : 1.0;
-            audio.volume       = opts.volume != null ? opts.volume : 1.0;
-            currentAudio = audio;
-            // Crude visemes — toggle the mouth at ~7Hz while audio plays.
-            const visemeTimer = setInterval(() => {
-              if (audio.paused || audio.ended) return;
-              setMouth(Math.random() < 0.5 ? 'v_e' : 'v_a');
-            }, 140);
-            const cleanup = () => {
-              clearInterval(visemeTimer);
-              if (currentAudio === audio) currentAudio = null;
-              finish();
-            };
-            audio.onended = cleanup;
-            audio.onerror = (e) => {
-              const err = audio.error;
-              console.warn('[tts] audio error code=', err?.code, 'msg=', err?.message,
-                           'src len=', dataUrl.length);
-              cleanup();
-            };
-            try {
-              await audio.play();
-              return;
-            } catch (playErr) {
-              console.warn('[tts] play() rejected — falling back to speechSynthesis:', playErr?.message);
-              clearInterval(visemeTimer);
-              if (currentAudio === audio) currentAudio = null;
-              audio.onended = null; audio.onerror = null;
-            }
-          } else {
-            console.warn('[tts] synth returned null, falling back');
+          const chunks = chunkText(text);
+          const synthP = chunks.map(c => window.cs.ttsSynth(c, gender));
+          let played = false;
+          for (let i = 0; i < chunks.length; i++) {
+            if (stopRequested || currentSpeakFinish !== finish) return finish();
+            const url = await synthP[i];
+            if (stopRequested || currentSpeakFinish !== finish) return finish();
+            if (!url) continue;
+            played = true;
+            await playOneChunk(url, opts, finish);
+            if (stopRequested || currentSpeakFinish !== finish) return;
           }
+          if (played) return finish();
         } catch (e) {
           console.warn('[tts] failed, falling back:', e.message);
         }
