@@ -133,17 +133,18 @@ async function speakItem({ text }) {
   currentSpokenText = '';
 }
 
+// Cap pending speeches so a chatty session can't backlog us forever.
+const QUEUE_MAX = 5;
 function enqueue(payload) {
   if (!payload || !payload.text) return;
-  // Always speak the MOST RECENT response. If a new one arrives while we're
-  // still speaking an older one, drop the queue and cut off the current line.
-  // Otherwise the character keeps falling further behind as more responses
-  // come in. Skip if the same text is already in flight.
-  const inFlight = speaking && currentSpokenText === payload.text;
-  if (inFlight) return;
-  queue.length = 0;
+  // Skip if it's literally the same text already speaking.
+  if (speaking && currentSpokenText === payload.text) return;
+  // Multiple Claude Code sessions can pipe into the same Claude's Body.
+  // Keep up to QUEUE_MAX pending lines so messages from different
+  // projects don't kick each other out of the queue. Drop the oldest
+  // when full so we don't fall further behind than that.
+  if (queue.length >= QUEUE_MAX) queue.shift();
   queue.push({ text: payload.text });
-  if (speaking) claude.stopSpeaking();
   processQueue();
 }
 
