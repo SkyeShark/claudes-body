@@ -460,10 +460,24 @@ function spawnKokoro() {
   const { spawn } = require('child_process');
   const workerPath = path.join(__dirname, 'tools', 'kokoro-worker.mjs');
   console.log('[kokoro] spawning worker:', workerPath);
+  // Cap ONNX runtime / OpenMP thread count so the synth doesn't peg
+  // every core on the machine while the user is doing other work
+  // (e.g. interacting with Claude Code in another project — the
+  // CPU spike was lagging mouse / UI in unrelated apps). Two threads
+  // is enough to keep synth comfortably real-time on modern CPUs and
+  // leaves the rest of the cores free.
+  const SYNTH_THREADS = '2';
   kokoroProc = spawn(process.execPath, [workerPath], {
     cwd: __dirname,
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      OMP_NUM_THREADS:        SYNTH_THREADS,
+      ORT_NUM_THREADS:        SYNTH_THREADS,
+      MKL_NUM_THREADS:        SYNTH_THREADS,
+      OPENBLAS_NUM_THREADS:   SYNTH_THREADS,
+    },
   });
   kokoroProc.stdout.on('data', (chunk) => {
     kokoroLineBuf += chunk.toString('utf8');
