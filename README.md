@@ -1,5 +1,6 @@
 # Claude's Body
-<img width="510" height="868" alt="image" src="https://github.com/user-attachments/assets/b4e6a9a4-62ba-4903-8076-3ec9b28b0510" />
+<img width="617" height="619" alt="image" src="https://github.com/user-attachments/assets/2b0900dc-75cc-4ba1-8251-cb60c9b659b8" />
+
 
 A 3D Claude that floats on your desktop and speaks Claude Code's responses
 out loud — with a real cartoon body, neural TTS, ragdoll physics when you
