@@ -65582,23 +65582,7 @@ void main() {
       }
       return _ttsKnownAvailable;
     }
-    function chunkText(text, maxLen = 250) {
-      const sentences = text.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g) || [text];
-      const chunks = [];
-      let cur = "";
-      for (const s of sentences) {
-        const trimmed = s.trim();
-        if (!trimmed) continue;
-        if (cur.length + trimmed.length + 1 <= maxLen) {
-          cur = cur ? cur + " " + trimmed : trimmed;
-        } else {
-          if (cur) chunks.push(cur);
-          cur = trimmed;
-        }
-      }
-      if (cur) chunks.push(cur);
-      return chunks.length ? chunks : [text];
-    }
+    const chunkText = window.chunkText;
     function playOneChunk(url, opts, ownerFinish) {
       return new Promise((resolve) => {
         const audio = new Audio(url);

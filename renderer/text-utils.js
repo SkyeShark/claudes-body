@@ -84,6 +84,37 @@ const TONE_RULES = [
 ];
 const ANIM_MIN_SCORE = 3;
 
+// Split text at REAL sentence boundaries (period+space+capital, or
+// end-of-text), merging short sentences up to maxLen. Avoids chopping
+// version strings like "0.1.7" into ".1"/".7" fragments — Kokoro
+// would synth those as orphan numbers and the listener would only
+// hear the trailing fragment.
+function chunkText(text, maxLen = 250) {
+  const sentences = [];
+  let last = 0;
+  const pattern = /[.!?]+\s+(?=[A-Z])|[.!?]+\s*$/g;
+  let m;
+  while ((m = pattern.exec(text)) !== null) {
+    sentences.push(text.slice(last, m.index + m[0].length).trim());
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) sentences.push(text.slice(last).trim());
+  const filtered = sentences.filter(s => s.length > 0);
+  if (filtered.length === 0) return [text];
+  const chunks = [];
+  let cur = '';
+  for (const s of filtered) {
+    if (cur.length + s.length + 1 <= maxLen) {
+      cur = cur ? cur + ' ' + s : s;
+    } else {
+      if (cur) chunks.push(cur);
+      cur = s;
+    }
+  }
+  if (cur) chunks.push(cur);
+  return chunks;
+}
+
 function analyzeTone(text) {
   // Score = rule.score for any matched rule (not multiplied by match
   // count). Earlier the score was `(matches || []).length * score`,
@@ -109,11 +140,12 @@ function analyzeTone(text) {
 if (typeof window !== 'undefined') {
   window.cleanForSpeech = cleanForSpeech;
   window.capLength      = capLength;
+  window.chunkText      = chunkText;
   window.analyzeTone    = analyzeTone;
   window.TONE_RULES     = TONE_RULES;
   window.ANIM_MIN_SCORE = ANIM_MIN_SCORE;
 }
 // Node side: CommonJS export so the test suite can require() this file.
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { cleanForSpeech, capLength, analyzeTone, TONE_RULES, ANIM_MIN_SCORE };
+  module.exports = { cleanForSpeech, capLength, chunkText, analyzeTone, TONE_RULES, ANIM_MIN_SCORE };
 }

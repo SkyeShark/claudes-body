@@ -1326,26 +1326,9 @@ export async function createVrmClaude(canvasParent) {
     return _ttsKnownAvailable;
   }
 
-  // Split a long string at sentence boundaries into chunks ≤ maxLen.
-  // Short sentences merge together up to the cap; sentences longer
-  // than the cap are emitted as their own chunk (no hard split).
-  function chunkText(text, maxLen = 250) {
-    const sentences = text.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g) || [text];
-    const chunks = [];
-    let cur = '';
-    for (const s of sentences) {
-      const trimmed = s.trim();
-      if (!trimmed) continue;
-      if (cur.length + trimmed.length + 1 <= maxLen) {
-        cur = cur ? cur + ' ' + trimmed : trimmed;
-      } else {
-        if (cur) chunks.push(cur);
-        cur = trimmed;
-      }
-    }
-    if (cur) chunks.push(cur);
-    return chunks.length ? chunks : [text];
-  }
+  // chunkText is defined globally in text-utils.js (loaded as a
+  // <script> before this bundle) — same source the unit tests cover.
+  const chunkText = window.chunkText;
 
   // Play one already-synthesized audio URL with viseme animation.
   // Resolves when audio ends, errors, or when speak() is preempted

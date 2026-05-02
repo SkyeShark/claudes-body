@@ -15,7 +15,7 @@ const ROOT      = path.join(__dirname, '..');
 const require_  = createRequire(import.meta.url);
 
 // ─── text-utils ────────────────────────────────────────────────────────
-const { cleanForSpeech, capLength, analyzeTone, TONE_RULES, ANIM_MIN_SCORE } =
+const { cleanForSpeech, capLength, chunkText, analyzeTone, TONE_RULES, ANIM_MIN_SCORE } =
   require_(path.join(ROOT, 'renderer', 'text-utils.js'));
 
 describe('cleanForSpeech', () => {
@@ -98,6 +98,41 @@ describe('cleanForSpeech', () => {
   test('does NOT insert "token" placeholder anywhere', () => {
     const out = cleanForSpeech('See file.foo.bar.baz next');
     assert.doesNotMatch(out, /\btoken\b/i);
+  });
+});
+
+describe('chunkText', () => {
+  test('does NOT split version strings like "0.1.7"', () => {
+    const out = chunkText('I shipped claudes-body@0.1.7 today.');
+    assert.equal(out.length, 1);
+    assert.match(out[0], /0\.1\.7/);
+  });
+
+  test('does NOT split kokoro-js@1.2.1', () => {
+    const out = chunkText('Use kokoro-js@1.2.1 for the synth.');
+    assert.equal(out.length, 1);
+    assert.match(out[0], /1\.2\.1/);
+  });
+
+  test('splits at real sentence boundaries (when over maxLen)', () => {
+    // maxLen=20 forces each short sentence into its own chunk.
+    const out = chunkText('First sentence. Second sentence! Third sentence?', 20);
+    assert.ok(out.length >= 2, 'should split into multiple chunks');
+  });
+
+  test('keeps short single sentence as one chunk', () => {
+    const out = chunkText('Just one sentence here.');
+    assert.equal(out.length, 1);
+  });
+
+  test('does NOT crash on empty input', () => {
+    assert.deepEqual(chunkText(''), ['']);
+  });
+
+  test('respects maxLen by merging short sentences', () => {
+    const out = chunkText('Short one. Short two. Short three.', 100);
+    // All three short sentences should fit in one chunk under maxLen=100.
+    assert.equal(out.length, 1);
   });
 });
 
