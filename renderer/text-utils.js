@@ -36,7 +36,10 @@ function cleanForSpeech(input) {
   // "app.js" → "app dot J S") and the user wants to hear them.
   text = text.replace(/\bhttps?:\/\/\S+/gi, ' link ');
   text = text.replace(/\bwww\.\S+/gi,       ' link ');
-  text = text.replace(/\b\S+@\S+\.\S+\b/g,  ' email ');
+  // Email: local@domain.tld where the TLD is at least 2 alphabetic
+  // chars. Stops "package@1.2.3" version strings from being treated
+  // as emails (the previous \S+@\S+\.\S+ pattern was too loose).
+  text = text.replace(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[a-zA-Z]{2,}\b/g, ' email ');
 
   // Long base64-ish hashes (20+ chars of mixed letters and digits with
   // no separator). These sound like noise; drop silently.

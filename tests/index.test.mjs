@@ -56,6 +56,12 @@ describe('cleanForSpeech', () => {
     assert.match(cleanForSpeech('Mail foo@bar.com please'), /\bemail\b/);
   });
 
+  test('does NOT treat package@version strings as emails', () => {
+    const out = cleanForSpeech('Published claudes-body@0.1.5 today');
+    assert.match(out, /claudes-body@0\.1\.5/);
+    assert.doesNotMatch(out, /\bemail\b/);
+  });
+
   test('drops long base64-ish hashes silently', () => {
     const out = cleanForSpeech('The commit was abc123def456ghi789jklmno here');
     assert.doesNotMatch(out, /abc123/);
