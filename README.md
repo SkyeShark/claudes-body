@@ -1,6 +1,8 @@
 # Claude's Body
 <img width="617" height="619" alt="image" src="https://github.com/user-attachments/assets/2b0900dc-75cc-4ba1-8251-cb60c9b659b8" />
 
+[![npm](https://img.shields.io/npm/v/claudes-body?color=cb3837&logo=npm)](https://www.npmjs.com/package/claudes-body)
+[![license](https://img.shields.io/npm/l/claudes-body)](LICENSE)
 
 A 3D Claude that floats on your desktop and speaks Claude Code's responses
 out loud — with a real cartoon body, neural TTS, ragdoll physics when you
