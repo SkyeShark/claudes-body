@@ -50,16 +50,25 @@ hand, or just leave him in the corner watching you work.
 
 ## Install
 
-### From npm (easiest)
+### From npm (easiest, all platforms)
+
+The package is published at
+[npmjs.com/package/claudes-body](https://www.npmjs.com/package/claudes-body).
+A global install gives you a `claudes-body` command:
 
 ```bash
 npm install -g claudes-body
 claudes-body
 ```
 
-That installs the package globally and launches the floating
-character. Run `claudes-body --install-hook` once to register the
-Stop hook with Claude Code.
+Then register the Stop hook with Claude Code once:
+
+```bash
+claudes-body --install-hook
+```
+
+Works on Windows, macOS, and Linux — npm pulls the platform-appropriate
+Electron binary as part of `npm install`.
 
 ### From source (for development / contributing)
 
@@ -67,17 +76,37 @@ Stop hook with Claude Code.
 git clone https://github.com/SkyeShark/claudes-body.git
 cd claudes-body
 npm install
+node install.js   # register the Stop hook
+npm start
 ```
 
-Register the Stop hook with your Claude Code installation:
+The hook installer edits `~/.claude/settings.json`, adding a `Stop`
+hook that points at `hook.js`. It backs up the existing file first
+(`settings.json.backup-<timestamp>`) and refuses to touch malformed
+JSON.
 
-```bash
-node install.js
-```
+### Pre-built standalone binaries
 
-This edits `~/.claude/settings.json`, adding a `Stop` hook that points
-at `hook.js`. It always backs up the existing file first
-(`settings.json.backup-<timestamp>`) and refuses to touch malformed JSON.
+Releases on [GitHub](https://github.com/SkyeShark/claudes-body/releases)
+include packaged installers / archives that don't require Node:
+
+| Platform | File | Notes |
+|---|---|---|
+| **Windows** | `Claude's Body Setup 0.1.0.exe` | NSIS installer, ~250 MB |
+| **Linux** | `claudes-body-0.1.0.tar.gz` | Extract and run `./claudes-body` |
+| **macOS** | *not currently provided* | See note below |
+
+**No macOS binary?** Right — `electron-builder` explicitly refuses to
+produce `.dmg` files unless run on macOS itself ("Build for macOS is
+supported only on macOS"), and the build environment we used was
+Windows. Mac users have two equally good options:
+1. **`npm install -g claudes-body`** (above) — same exact runtime, no
+   `.dmg` ceremony needed. This is what we recommend.
+2. Clone the repo and run `npm run build:mac` on a Mac to produce
+   your own `.dmg`.
+
+A future GitHub Actions workflow could automate the Mac build on tag
+push using a `macos-latest` runner — PRs welcome.
 
 ## Run
 
