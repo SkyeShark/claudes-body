@@ -73,7 +73,12 @@ function createWindow() {
   const defaultX = work.x + work.width  - currentWidth  - 24;
   const defaultY = work.y + work.height - currentHeight - 24;
 
+  // Icon-capture mode wants a square canvas so the mane fits without
+  // horizontal clipping.
+  const iconCapture = process.argv.includes('--capture-icon');
+  if (iconCapture) { currentWidth = 512; currentHeight = 512; }
   mainWindow = new BrowserWindow({
+    title: "Claude's Body",
     width:  currentWidth,
     height: currentHeight,
     x: Number.isFinite(state.x) ? state.x : defaultX,
@@ -81,6 +86,7 @@ function createWindow() {
     frame: false,
     transparent: true,
     alwaysOnTop: true,
+    icon: path.join(__dirname, 'build', 'icon.png'),
     resizable: false,
     hasShadow: false,
     skipTaskbar: false,
@@ -103,8 +109,13 @@ function createWindow() {
   }
 
   const indexPath = path.join(__dirname, 'renderer', 'index.html');
-  console.log('[claude-says] loading', indexPath);
-  mainWindow.loadFile(indexPath);
+  const captureIcon = process.argv.includes('--capture-icon');
+  console.log('[claude-says] loading', indexPath, captureIcon ? '(icon-capture mode)' : '');
+  if (captureIcon) {
+    mainWindow.loadFile(indexPath, { search: 'capture=icon' });
+  } else {
+    mainWindow.loadFile(indexPath);
+  }
 
   // Surface renderer crashes / load failures
   mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
@@ -432,6 +443,118 @@ ipcMain.on('minimize', () => {
 ipcMain.handle('get-state',  ()       => loadState());
 ipcMain.handle('set-state',  (_e, s)  => { saveState(s); return true; });
 
+// ---------- Kokoro TTS (out-of-process) ----------
+// onnxruntime-node's session.run blocks the Node event loop during
+// inference. In the Electron main process that means mouse, IPC, and
+// audio playback all stutter for several seconds per synth. Run it
+// in a separate child process instead and JSON-RPC over stdio.
+const KOKORO_VOICES = { male: 'am_michael', female: 'af_bella' };
+let kokoroProc = null;
+let kokoroReady = false;
+const kokoroPending = new Map();   // id → { resolve, reject }
+let kokoroNextId = 1;
+let kokoroLineBuf = '';
+
+function spawnKokoro() {
+  if (kokoroProc) return;
+  const { spawn } = require('child_process');
+  const workerPath = path.join(__dirname, 'tools', 'kokoro-worker.mjs');
+  console.log('[kokoro] spawning worker:', workerPath);
+  kokoroProc = spawn(process.execPath, [workerPath], {
+    cwd: __dirname,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+  });
+  kokoroProc.stdout.on('data', (chunk) => {
+    kokoroLineBuf += chunk.toString('utf8');
+    let idx;
+    while ((idx = kokoroLineBuf.indexOf('\n')) >= 0) {
+      const line = kokoroLineBuf.slice(0, idx);
+      kokoroLineBuf = kokoroLineBuf.slice(idx + 1);
+      if (!line.trim()) continue;
+      let msg;
+      try { msg = JSON.parse(line); }
+      catch (_) { continue; }
+      const handler = kokoroPending.get(msg.id);
+      if (!handler) continue;
+      kokoroPending.delete(msg.id);
+      if (msg.ok) handler.resolve(msg.wav);
+      else        handler.reject(new Error(msg.error || 'kokoro error'));
+    }
+  });
+  kokoroProc.stderr.on('data', (d) => {
+    const txt = d.toString();
+    process.stderr.write('[kokoro-worker] ' + txt);
+    if (txt.includes('[kokoro-worker] ready')) kokoroReady = true;
+  });
+  kokoroProc.on('exit', (code) => {
+    console.log('[kokoro] worker exited', code);
+    kokoroProc = null;
+    kokoroReady = false;
+    for (const [, h] of kokoroPending) h.reject(new Error('kokoro worker died'));
+    kokoroPending.clear();
+  });
+}
+function kokoroSynth(text, voice) {
+  return new Promise((resolve, reject) => {
+    if (!kokoroProc) spawnKokoro();
+    const id = kokoroNextId++;
+    kokoroPending.set(id, { resolve, reject });
+    kokoroProc.stdin.write(JSON.stringify({ id, text, voice }) + '\n');
+  });
+}
+// Warm the worker on app ready so the first synth doesn't pay the
+// model-load penalty.
+app.whenReady().then(() => { spawnKokoro(); });
+
+ipcMain.handle('tts-available', () => kokoroReady);
+ipcMain.handle('tts-synth', async (_event, text, gender) => {
+  if (!text || !text.trim()) return null;
+  if (!kokoroReady) return null;
+  const voice = KOKORO_VOICES[gender] || KOKORO_VOICES.male;
+  console.log('[kokoro] synth gender=', gender, 'voice=', voice, 'text=', JSON.stringify(text));
+  try {
+    const t0 = Date.now();
+    const wavB64 = await kokoroSynth(text, voice);
+    console.log('[kokoro] synth ok:', wavB64.length, 'b64 chars,', (Date.now() - t0) + 'ms');
+    return 'data:audio/wav;base64,' + wavB64;
+  } catch (e) {
+    console.error('[kokoro] synth failed:', e?.message);
+    return null;
+  }
+});
+
+// Save the icon dataURL to build/icon.png and exit. Used by the
+// `npm run capture-icon` flow.
+ipcMain.on('save-icon-png', (_event, dataUrl) => {
+  try {
+    const m = /^data:image\/png;base64,(.+)$/.exec(dataUrl);
+    if (!m) return;
+    const dir = path.join(__dirname, 'build');
+    fs.mkdirSync(dir, { recursive: true });
+    const outPath = path.join(dir, 'icon.png');
+    fs.writeFileSync(outPath, Buffer.from(m[1], 'base64'));
+    console.log('[icon] saved', outPath, 'bytes=', m[1].length * 0.75 | 0);
+    setTimeout(() => app.quit(), 500);
+  } catch (e) {
+    console.error('[icon] save failed:', e);
+  }
+});
+
+// Debug-only: write a PNG dataURL from the renderer to disk.
+ipcMain.on('save-debug-frame', (_event, name, dataUrl) => {
+  try {
+    const m = /^data:image\/png;base64,(.+)$/.exec(dataUrl);
+    if (!m) return;
+    const dir = path.join(os.tmpdir(), 'claude-says-debug');
+    fs.mkdirSync(dir, { recursive: true });
+    const safeName = String(name || 'frame').replace(/[^\w.-]/g, '_');
+    fs.writeFileSync(path.join(dir, safeName + '.png'), Buffer.from(m[1], 'base64'));
+  } catch (e) {
+    console.error('[debug] saveDebugFrame failed:', e);
+  }
+});
+
 // ---------- app lifecycle ----------
 app.on('second-instance', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -439,6 +562,11 @@ app.on('second-instance', () => {
     mainWindow.focus();
   }
 });
+
+app.setName("Claude's Body");
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.claudesbody.app');
+}
 
 app.whenReady().then(() => {
   startHttpServer();

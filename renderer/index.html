@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' blob:; img-src 'self' data: blob:; connect-src 'self' blob: file:; worker-src 'self' blob:;">
-  <title>claude says</title>
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' blob: file:; worker-src 'self' blob:;">
+  <title>Claude's Body</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -29,15 +29,11 @@
 
     <!-- Settings panel — toggled by the gear -->
     <div id="settingsPanel" class="hidden no-drag" data-no-drag="1">
-      <h3>Voice mode</h3>
-      <select id="voiceMode">
-        <option value="auto">Auto</option>
-        <option value="female">Female</option>
-        <option value="male">Male</option>
-      </select>
-
       <h3>Voice</h3>
-      <select id="voiceSelect"><option value="">— default —</option></select>
+      <select id="voiceMode">
+        <option value="male">Male (Michael)</option>
+        <option value="female">Female (Bella)</option>
+      </select>
 
       <h3>Length</h3>
       <select id="lengthCap">
@@ -67,6 +63,7 @@
   <!-- Renderer toggle: 'vrm' for 3D, 'svg' for the original drawn version.
        VRM mode requires the bundled three.js + three-vrm script below. -->
   <script src="renderer-mode.js"></script>
+  <script src="text-utils.js"></script>
   <script src="character.js"></script>
   <script src="vrm-character.bundle.js"></script>
   <script src="app.js"></script>

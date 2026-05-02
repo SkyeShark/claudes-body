@@ -48,4 +48,19 @@ contextBridge.exposeInMainWorld('cs', {
   },
 
   platform: process.platform,
+
+  // Debug-only: write a PNG dataURL to disk. Lets the renderer dump
+  // mid-drag screenshots so the developer can see what's happening.
+  saveDebugFrame: (name, dataUrl) =>
+    ipcRenderer.send('save-debug-frame', name, dataUrl),
+
+  // One-shot: capture the head-zoomed canvas as a transparent PNG and
+  // write to build/icon.png. The main process then quits.
+  saveIconPng: (dataUrl) => ipcRenderer.send('save-icon-png', dataUrl),
+
+  // Neural TTS (Kokoro). Main process synthesizes via onnxruntime and
+  // returns a WAV data URL. Returns null if model load failed, in
+  // which case the renderer falls back to speechSynthesis.
+  ttsAvailable: () => ipcRenderer.invoke('tts-available'),
+  ttsSynth: (text, gender) => ipcRenderer.invoke('tts-synth', text, gender),
 });

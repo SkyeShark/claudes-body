@@ -4,6 +4,7 @@ out/
 .DS_Store
 Thumbs.db
 *.log
+*.bak
 .env
 .env.local
 .vscode/
@@ -13,3 +14,7 @@ Thumbs.db
 # state png in this folder if desired; the rest are throwaway debug captures.
 tools/screenshots/
 !tools/screenshots/.gitkeep
+
+# Scratch files from tools (synth tests, pcm dumps, etc.)
+/_*.wav
+/_*.png

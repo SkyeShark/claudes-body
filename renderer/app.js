@@ -23,8 +23,7 @@ async function makeBackend() {
 
 // ---------- settings (persisted via main process) ----------
 const DEFAULTS = {
-  voiceMode: 'auto',      // 'auto' | 'female' | 'male'
-  voiceName: '',          // specific voice override
+  voiceMode: 'male',      // 'male' (Ryan) | 'female' (Amy)
   lengthCap: 200,         // 0 = no cap. shorter = less lag on long responses
   rate: 0.96,
   muted: false,
@@ -57,127 +56,9 @@ function persistSettings() {
   try { window.cs.setState(settings); } catch (_) {}
 }
 
-// ---------- text cleanup (strip markdown / code / SSE noise) ----------
-function cleanForSpeech(input) {
-  let text = String(input || '');
-
-  // strip XML/HTML-ish tags (system reminders, command output blocks, etc.)
-  text = text.replace(/<[^>]+>/g, ' ');
-
-  // fenced code blocks → "code block" placeholder so we don't read code aloud
-  text = text.replace(/```[\s\S]*?```/g, ' . code block . ');
-
-  // inline code → unwrap
-  text = text.replace(/`([^`]+)`/g, '$1');
-
-  // markdown emphasis
-  text = text.replace(/\*\*([^*]+)\*\*/g, '$1');
-  text = text.replace(/\*([^*]+)\*/g,     '$1');
-  text = text.replace(/__([^_]+)__/g,     '$1');
-  text = text.replace(/_([^_]+)_/g,       '$1');
-
-  // headers
-  text = text.replace(/^#+\s+/gm, '');
-
-  // list bullets
-  text = text.replace(/^\s*[-*+]\s+/gm, '');
-  text = text.replace(/^\s*\d+\.\s+/gm, '');
-
-  // links: keep label, drop URL
-  text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-
-  // collapse whitespace
-  text = text.replace(/\s+/g, ' ').trim();
-  return text;
-}
-
-function capLength(text, cap) {
-  if (!cap || text.length <= cap) return text;
-  // first paragraph if it fits
-  const firstPara = text.split(/\n\n+/)[0].trim();
-  if (firstPara.length <= cap) return firstPara;
-  // accumulate sentences up to the cap
-  const sentences = firstPara.match(/[^.!?]+[.!?]+/g) || [firstPara];
-  let out = '';
-  for (const s of sentences) {
-    if ((out + s).length > cap) break;
-    out += s;
-  }
-  if (!out) out = firstPara.slice(0, Math.max(cap - 3, 1)) + '...';
-  return out.trim();
-}
-
-// ---------- tone analyzer ----------
-// Keyword-weighted heuristic — fast, dependency-free, surprisingly readable.
-// Returns { emotion, pose } compatible with character.js dictionaries.
-// Each tone offers a small family of poses. We pick one at random per turn,
-// skipping whatever pose was used last, so the character doesn't keep doing
-// the exact same gesture every time the same word shows up.
-const TONE_RULES = [
-  // Only true emotional-affect words count as sad. Technical constraints
-  // ("can't", "unable", "missing", "broken") show up constantly in normal
-  // explanation and shouldn't change the character's mood.
-  { tone: 'sad',        poses: ['in', 'hand_to_self'],            score: 3,
-    re: /\b(sorry|unfortunately|regret(?:fully)?|sadly|alas|disappointed|disheartened|terrible|awful|unhappy|grieve|mourning|heartbroken)\b/i },
-  { tone: 'annoyed',    poses: ['in', 'shrug'],                   score: 2,
-    re: /\b(error|exception|invalid|denied|forbidden|reject(?:ed)?|conflict|frustrated|annoying|dammit|argh|ugh)\b/i },
-  { tone: 'uncertain',  poses: ['shrug', 'in', 'curious'],        score: 3,
-    re: /\b(not sure|unclear|don'?t know|unsure|might not|possibly|i'?m not certain|hard to say|can'?t tell)\b/i },
-  { tone: 'thoughtful', poses: ['curious', 'in', 'shrug'],        score: 2,
-    re: /\b(consider|think|perhaps|maybe|might|could|wonder|hmm|let me|let's|investigate|examine|analy[sz]e)\b/i },
-  { tone: 'wonder',     poses: ['open_big', 'hands_up'],          score: 2,
-    re: /\b(amazing|incredible|fascinating|whoa|wow)\b/i },
-  { tone: 'amused',     poses: ['rest', 'one_out', 'curious'],    score: 1,
-    re: /\b(haha|lol|funny|interesting|cute|nice|oh)\b/i },
-  { tone: 'warm',       poses: ['hand_to_self', 'one_out', 'open', 'resolved'], score: 2,
-    re: /\b(thank(?:s| you)|appreciate|welcome|kind|glad|happy to|here for)\b/i },
-  { tone: 'happy',      poses: ['wave', 'open', 'resolved', 'one_out'],         score: 2,
-    re: /\b(great|awesome|excellent|perfect|love|wonderful|fantastic|excited|done|works|success|fixed|ready|hi|hello|hey|greetings)\b/i },
-  { tone: 'resolved',   poses: ['open', 'resolved', 'one_out'],   score: 2,
-    re: /\b(definitely|certainly|absolutely|sure|of course|exactly|right|will|should|complete)\b/i },
-];
-
-let lastPose = 'rest';
-function pickPose(poses) {
-  if (!poses || poses.length === 0) return 'rest';
-  if (poses.length === 1) return poses[0];
-  const choices = poses.filter(p => p !== lastPose);
-  const list = choices.length ? choices : poses;
-  return list[Math.floor(Math.random() * list.length)];
-}
-
-function analyzeTone(text) {
-  const scores = {};
-  let bestTone  = 'matter';
-  let bestPoses = ['rest'];
-  let bestScore = 0;
-
-  for (const r of TONE_RULES) {
-    const matches = (text.match(r.re) || []).length;
-    if (matches > 0) {
-      const s = (scores[r.tone] = (scores[r.tone] || 0) + matches * r.score);
-      if (s > bestScore) {
-        bestScore = s;
-        bestTone  = r.tone;
-        bestPoses = r.poses;
-      }
-    }
-  }
-
-  // punctuation hints (reinforces / breaks ties)
-  const exclaims  = (text.match(/!/g) || []).length;
-  const questions = (text.match(/\?/g) || []).length;
-  if (questions >= 1 && bestScore < 3) {
-    bestTone = 'thoughtful'; bestPoses = ['curious', 'in', 'shrug'];
-  }
-  if (exclaims >= 2 && bestScore < 3) {
-    bestTone = 'happy'; bestPoses = ['wave', 'open', 'one_out'];
-  }
-
-  const pose = pickPose(bestPoses);
-  lastPose = pose;
-  return { emotion: bestTone, pose };
-}
+// cleanForSpeech / capLength / analyzeTone / TONE_RULES / ANIM_MIN_SCORE
+// live in renderer/text-utils.js (loaded as a <script> before this file)
+// so the unit-test suite can require() them from Node too.
 
 // ---------- voice picker ----------
 let voicesReady = false;
@@ -196,41 +77,6 @@ function refreshVoices() {
   if (!window.speechSynthesis) return;
   voiceList = window.speechSynthesis.getVoices() || [];
   voicesReady = voiceList.length > 0;
-
-  const sel = $('voiceSelect');
-  if (!sel) return;
-  const current = sel.value;
-
-  // Filter to match the selected voice mode so the dropdown only offers
-  // voices that actually fit the chosen gender.
-  let visible = voiceList;
-  if (settings.voiceMode === 'female') {
-    visible = voiceList.filter(v => FEM_NAME_RE.test(v.name));
-  } else if (settings.voiceMode === 'male') {
-    visible = voiceList.filter(v => MAS_NAME_RE.test(v.name));
-  }
-
-  sel.innerHTML = '<option value="">— default —</option>';
-  for (const v of visible) {
-    const opt = document.createElement('option');
-    opt.value = v.name;
-    opt.textContent = `${v.name} (${v.lang})`;
-    sel.appendChild(opt);
-  }
-
-  // Try to keep the current selection if still in the filtered list.
-  if (current && visible.some(v => v.name === current)) {
-    sel.value = current;
-  } else if (settings.voiceName && visible.some(v => v.name === settings.voiceName)) {
-    sel.value = settings.voiceName;
-  } else {
-    // Selection no longer matches the mode — clear it so Auto mapping kicks in.
-    sel.value = '';
-    if (settings.voiceName) {
-      settings.voiceName = '';
-      persistSettings();
-    }
-  }
 }
 if (window.speechSynthesis) {
   window.speechSynthesis.onvoiceschanged = refreshVoices;
@@ -238,12 +84,10 @@ if (window.speechSynthesis) {
 }
 
 function buildVoicePrefs() {
-  return {
-    byName: settings.voiceName || null,
-    gender: settings.voiceMode === 'female' ? 'female'
-          : settings.voiceMode === 'male'   ? 'male'
-          : null,
-  };
+  // 'male' or 'female' — drives both Piper (which has dedicated Ryan
+  // and Amy voices) and the speechSynthesis fallback (which name-
+  // matches against gendered voice names).
+  return { gender: settings.voiceMode === 'female' ? 'female' : 'male' };
 }
 
 // ---------- speak queue ----------
@@ -271,8 +115,10 @@ async function speakItem({ text }) {
   currentSpokenText = capped;
 
   const tone = analyzeTone(capped);
-  claude.setEmotion(tone.emotion);
-  claude.setArmPose(tone.pose, 700);
+  if (tone.emotion) claude.setEmotion(tone.emotion);
+  if (tone.anim && tone.score >= ANIM_MIN_SCORE && claude.playAnimation) {
+    claude.playAnimation(tone.anim);
+  }
 
   await claude.speak(capped, {
     rate:       Number(settings.rate) || 0.96,
@@ -281,8 +127,6 @@ async function speakItem({ text }) {
   });
 
   currentSpokenText = '';
-  // gentle return to neutral
-  claude.setArmPose('rest', 600);
 }
 
 function enqueue(payload) {
@@ -329,6 +173,15 @@ function hitTestPoint(x, y) {
   const elt = document.elementFromPoint(x, y);
   if (!elt) return null;
   if (elt.closest && elt.closest('#character')) return 'character';
+  // VRM mode: the WebGL canvas covers the whole window; visiblePainted
+  // alone treats every canvas pixel as "on the character", so we sample
+  // the actual rendered alpha to distinguish painted body pixels from
+  // transparent window space.
+  if (elt.closest && elt.closest('#vrm-stage')) {
+    return (claude && claude.isCharacterPixel && claude.isCharacterPixel(x, y))
+      ? 'character'
+      : null;
+  }
   if (elt.closest && (elt.closest('#controls') || elt.closest('#settingsPanel'))) return 'controls';
   return null;
 }
@@ -339,7 +192,9 @@ function setHovering(on) {
   document.body.classList.toggle('hovering', hoveringChar);
 }
 
+let lastHoverMoveAt = 0;
 document.addEventListener('mousemove', (e) => {
+  lastHoverMoveAt = performance.now();
   if (isDragging) {
     setIgnore(false);
     return;
@@ -358,6 +213,16 @@ document.addEventListener('mousemove', (e) => {
   // Normal mode: catch clicks only on character or controls.
   setIgnore(!hit);
 });
+
+// When the cursor leaves the window's bounds entirely, no mousemove
+// fires (especially in locked mode with click-through), so the
+// 'hovering' class would stay on forever. Poll: if no mousemove for
+// 200ms while we think we're hovering, drop hover state.
+setInterval(() => {
+  if (!hoveringChar) return;
+  if (isDragging) return;
+  if (performance.now() - lastHoverMoveAt > 200) setHovering(false);
+}, 100);
 
 function applyLockState() {
   document.body.classList.toggle('locked', !!settings.locked);
@@ -387,10 +252,13 @@ window.cs.onToggleLock(() => {
 
 // ---------- manual drag implementation (so we can fire animations) ----------
 let isDragging  = false;
+let isHandDrag  = false;   // true if the drag originated by clicking the
+                           // VRM character's left hand. In hand-drag mode
+                           // the window stays put and IK pulls the hand
+                           // to the cursor while the body ragdolls.
 let dragOffset  = { x: 0, y: 0 };
 let dragStartPos = null;
 let preDragEmotion = 'neutral';
-let preDragPose    = 'rest';
 
 function isNoDragTarget(el) {
   while (el && el !== document.body) {
@@ -402,43 +270,210 @@ function isNoDragTarget(el) {
   return false;
 }
 
+// Track which hand was grabbed so we update the right IK target on move
+// and clear the right one on release. null = no hand-grab (window drag).
+let handDragSide = null;
+// Hand-drag IK projects the cursor's window-relative position onto the
+// hand's depth plane each mousemove (`cursorToHandTargetWorld`). The
+// hand-follow window loop intentionally LAGS the cursor (HAND_DRAG_FOLLOW
+// < 1), so the cursor's clientX/clientY drifts ahead of the window each
+// frame — which is exactly the signal we want the IK to track.
+
 document.addEventListener('mousedown', async (e) => {
   if (e.button !== 0) return;
   if (isNoDragTarget(e.target)) return;
 
+  // Detect hand-grab. Two conditions must both hold:
+  //   1. Cursor is over actual Claude pixels (rejects clicks in empty
+  //      transparent space that happen to be near a hand bone's
+  //      projected screen position).
+  //   2. Cursor is within ~50px of a hand bone's projected position.
+  const onCharacter = hitTestPoint(e.clientX, e.clientY) === 'character';
+  const grabbedHand = (onCharacter && claude.whichHandHit)
+    ? claude.whichHandHit(e.clientX, e.clientY, 50)
+    : null;
+
   isDragging = true;
+  isHandDrag = !!grabbedHand;
+  handDragSide = grabbedHand;
   dragStartPos = { x: e.screenX, y: e.screenY };
+  lastDragScreenX = e.screenX;
+  lastDragScreenY = e.screenY;
+  // Capture window offset so the window can follow the cursor — we want
+  // the character to actually drag across the screen (not stay put).
   try {
     const [winX, winY] = await window.cs.getWindowPosition();
     dragOffset = { x: e.screenX - winX, y: e.screenY - winY };
+    // Seed the eased follow at the current window position so it doesn't
+    // jump on the first hand-drag mousemove.
+    dragCurrentX = winX;
+    dragCurrentY = winY;
+    dragTargetX  = winX;
+    dragTargetY  = winY;
+    if (grabbedHand) startHandDragLoop();
   } catch (_) {
     dragOffset = { x: 0, y: 0 };
   }
 
-  // remember and switch to "being grabbed" pose — actual hands-up startle.
   preDragEmotion = claude.currentEmotion;
-  preDragPose    = 'rest'; // we don't know previous arm pose from outside; safe default
   claude.setEmotion('surprised');
-  claude.setArmPose('hands_up', 180);
   claude.setDragging(true);
+  if (grabbedHand && claude.cursorToHandTargetWorld) {
+    const t = claude.cursorToHandTargetWorld(e.clientX, e.clientY, grabbedHand);
+    if (t) {
+      if (grabbedHand === 'left')  claude.setLeftHandIKTarget(t);
+      else                          claude.setRightHandIKTarget(t);
+    }
+  }
+
+  // Woah-oh-oh while being dragged. Drop any existing TTS first so
+  // the woah cuts in immediately rather than queueing behind a prior
+  // response. The speak Promise resolves when speech ends; if the
+  // user's still dragging, fire another so it loops.
+  if (claude.stopSpeaking) claude.stopSpeaking();
+  queue.length = 0;
+  speaking = false;
+  startWoahLoop();
 });
+
+// Static woah audio — committed under assets/voices/<gender>/woah_*.wav.
+// Bake them with `node tools/bake-voice-lines.mjs` whenever the lines or
+// voices change. Runtime just builds an Audio element pointing at the
+// local URL — no IPC, no synth.
+const WOAH_SLUGS = ['woah_1', 'woah_2', 'woah_3', 'woah_4'];
+function woahUrl(gender, slug) {
+  return `../assets/voices/${gender}/${slug}.wav`;
+}
+// Hold references to prewarmed Audio elements so the browser keeps
+// the decoded WAVs in cache and the first drag doesn't pay decode cost.
+const _woahPrewarm = [];
+function prewarmWoahs() {
+  for (const gender of ['male', 'female']) {
+    for (const slug of WOAH_SLUGS) {
+      const a = new Audio(woahUrl(gender, slug));
+      a.preload = 'auto';
+      a.muted   = true;     // silently fully load the WAV
+      // Trigger a 0-volume play+pause cycle so the browser decodes
+      // and caches the audio. Some engines lazy-decode until first
+      // play() request even with preload=auto.
+      a.play().then(() => { try { a.pause(); a.currentTime = 0; } catch (_) {} })
+              .catch(() => {});
+      _woahPrewarm.push(a);
+    }
+  }
+}
+
+let woahLoopActive = false;
+async function startWoahLoop() {
+  if (woahLoopActive) return;
+  woahLoopActive = true;
+  const gender = settings.voiceMode === 'female' ? 'female' : 'male';
+  let i = 0;
+  while (isDragging && !settings.muted) {
+    const url = woahUrl(gender, WOAH_SLUGS[i++ % WOAH_SLUGS.length]);
+    await claude.playClip(url);    // mouth flaps via the renderer's viseme timer
+    if (!isDragging) break;
+  }
+  woahLoopActive = false;
+}
+
+let lastDragScreenX = null;
+let lastDragScreenY = null;
+
+// In hand-drag we want the window to LAG the cursor — the cursor pulls
+// ahead, the hand reaches toward it via IK, and the window catches up
+// over time. That gives the "dragging Claude by the hand" feel. The
+// easing runs in its own loop independent of mousemove rate.
+let dragTargetX = 0, dragTargetY = 0;        // where the window WANTS to be
+let dragCurrentX = 0, dragCurrentY = 0;      // where the window currently is
+let dragLoopRunning = false;
+const HAND_DRAG_FOLLOW = 0.10;               // 0=window doesn't follow, 1=instant.
+                                             // Low value lets the cursor pull
+                                             // visibly ahead of the body — arm
+                                             // IK reaches for the cursor while
+                                             // the window slowly catches up,
+                                             // selling the "dragging by the
+                                             // hand" feel vs. plain window drag.
+function startHandDragLoop() {
+  if (dragLoopRunning) return;
+  dragLoopRunning = true;
+  function step() {
+    if (!isDragging || !isHandDrag) {
+      dragLoopRunning = false;
+      return;  // bail without scheduling another frame
+    }
+    // Snap when essentially caught up — avoids sub-pixel oscillation that
+    // can look like the window drifting on its own.
+    const dx = dragTargetX - dragCurrentX;
+    const dy = dragTargetY - dragCurrentY;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
+      dragCurrentX = dragTargetX;
+      dragCurrentY = dragTargetY;
+    } else {
+      dragCurrentX += dx * HAND_DRAG_FOLLOW;
+      dragCurrentY += dy * HAND_DRAG_FOLLOW;
+    }
+    window.cs.moveWindow(Math.round(dragCurrentX), Math.round(dragCurrentY));
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
 
 document.addEventListener('mousemove', (e) => {
   if (!isDragging) return;
+  if (isHandDrag) {
+    // Eased follow: target updates instantly, window catches up smoothly.
+    dragTargetX = e.screenX - dragOffset.x;
+    dragTargetY = e.screenY - dragOffset.y;
+    // IK target = cursor's window-relative position, projected onto the
+    // hand's depth plane. The hand bone tracks under the pointer
+    // visually. As the window lags-then-catches-up, the cursor's
+    // clientX/clientY shifts each frame — that's the signal.
+    if (handDragSide && claude.cursorToHandTargetWorld) {
+      const t = claude.cursorToHandTargetWorld(e.clientX, e.clientY, handDragSide);
+      if (t) {
+        if (handDragSide === 'left')  claude.setLeftHandIKTarget(t);
+        else                           claude.setRightHandIKTarget(t);
+      }
+    }
+    if (lastDragScreenX != null && claude.setDragVelocity) {
+      claude.setDragVelocity(e.screenX - lastDragScreenX, e.screenY - lastDragScreenY);
+    }
+    lastDragScreenX = e.screenX;
+    lastDragScreenY = e.screenY;
+    return;
+  }
+  // Window-drag: cursor moves the whole window directly.
   const newX = e.screenX - dragOffset.x;
   const newY = e.screenY - dragOffset.y;
   window.cs.moveWindow(newX, newY);
+  if (lastDragScreenX != null && claude.setDragVelocity) {
+    claude.setDragVelocity(e.screenX - lastDragScreenX, e.screenY - lastDragScreenY);
+  }
+  lastDragScreenX = e.screenX;
+  lastDragScreenY = e.screenY;
 });
 
 function endDrag() {
   if (!isDragging) return;
   isDragging = false;
+  lastDragScreenX = null;
+  lastDragScreenY = null;
+  if (isHandDrag) {
+    isHandDrag = false;
+    handDragSide = null;
+    if (claude.clearHandIKTargets) claude.clearHandIKTargets();
+  }
   claude.setDragging(false);
+  // Cut off the woah-loop in flight. The loop's `while (isDragging)`
+  // condition takes over but the current utterance was already queued
+  // by the SpeechSynthesis engine — stopSpeaking flushes it so it
+  // doesn't keep talking after release.
+  if (claude.stopSpeaking) claude.stopSpeaking();
   // dizzy little blink, then snap back to a happy resting state
   claude.blink();
   setTimeout(() => {
     claude.setEmotion('happy');
-    claude.setArmPose('rest', 500);
     setTimeout(() => {
       // if not currently speaking, settle to neutral
       if (!speaking) claude.setEmotion('neutral');
@@ -480,13 +515,6 @@ quitBtn.addEventListener('click', () => window.cs.quit());
 $('voiceMode').addEventListener('change', (e) => {
   settings.voiceMode = e.target.value;
   persistSettings();
-  // Re-filter the specific-voice dropdown so it only shows voices matching
-  // the new mode.
-  refreshVoices();
-});
-$('voiceSelect').addEventListener('change', (e) => {
-  settings.voiceName = e.target.value;
-  persistSettings();
 });
 $('lengthCap').addEventListener('change', (e) => {
   settings.lengthCap = Number(e.target.value);
@@ -510,7 +538,6 @@ $('lockToggle').addEventListener('change', (e) => {
 
 function applySettingsToUI() {
   $('voiceMode').value   = settings.voiceMode;
-  $('voiceSelect').value = settings.voiceName || '';
   $('lengthCap').value   = String(settings.lengthCap);
   $('rate').value        = String(settings.rate);
   $('sizeSelect').value  = settings.windowSize || 'medium';
@@ -533,11 +560,73 @@ function applySettingsToUI() {
     document.body.classList.remove('renderer-vrm');
     claude = createClaude($('character'));
   }
+
+  // Icon capture mode — render a few frames of the head-zoomed
+  // character on a transparent canvas, dump it as PNG, exit.
+  if (window.CAPTURE_ICON) {
+    await claude.assemble();
+    claude.startIdle();
+    claude.setEmotion('happy');
+    setTimeout(() => {
+      const canvas = document.querySelector('#vrm-stage canvas');
+      if (canvas) {
+        const dataUrl = canvas.toDataURL('image/png');
+        window.cs.saveIconPng(dataUrl);
+      } else {
+        console.error('[icon] no canvas found');
+      }
+    }, 1500);
+    return;
+  }
   await claude.assemble();
   claude.startIdle();
 
-  // welcome wave on first launch
-  setTimeout(() => {
-    enqueue({ text: "Hi. I'm here. Press Control Shift L to grab me." });
-  }, 400);
+  // Try VRMA animations: preload a starter set so they're ready to play
+  // on key/event triggers. Names map 1-9 to keyboard quick-play.
+  if (claude.loadAnimation && claude.playAnimation) {
+    const ANIM_KEYS = [
+      ['1', 'greeting',   '../assets/animations/Standing Greeting.vrma'],
+      ['2', 'salute',     '../assets/animations/Salute.vrma'],
+      ['3', 'handraise',  '../assets/animations/Hand Raising.vrma'],
+      ['4', 'reachout',   '../assets/animations/Reaching Out.vrma'],
+      ['5', 'dismiss',    '../assets/animations/Dismissing Gesture.vrma'],
+      ['6', 'crazy',      '../assets/animations/Crazy Gesture.vrma'],
+      ['7', 'lookaway',   '../assets/animations/Look Away Gesture.vrma'],
+      ['8', 'thankful',   '../assets/animations/Thankful.vrma'],
+      ['9', 'victory',    '../assets/animations/Victory.vrma'],
+      ['0', 'cheering',   '../assets/animations/Cheering.vrma'],
+      ['t', 'talking',    '../assets/animations/Talking.vrma'],
+      ['i', 'idle',       '../assets/animations/Standing Idle.vrma'],
+    ];
+    for (const [, name, url] of ANIM_KEYS) {
+      try { await claude.loadAnimation(name, url); }
+      catch (e) { console.warn('[vrma] failed to load', name, e); }
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+      const map = ANIM_KEYS.find(([k]) => k === e.key);
+      if (!map) return;
+      const [, name] = map;
+      const loop = (name === 'idle' || name === 'talking');
+      claude.playAnimation(name, { loop });
+    });
+
+    // Welcome wave — happy face + greeting clip + baked welcome WAV.
+    // The static WAV plays instantly; no synth or IPC needed.
+    claude.playAnimation('idle', { loop: true });
+    claude.setEmotion('happy');
+    setTimeout(() => {
+      claude.playAnimation('greeting');
+      const gender = settings.voiceMode === 'female' ? 'female' : 'male';
+      claude.playClip(`../assets/voices/${gender}/welcome.wav`);
+    }, 600);
+
+    // Prewarm the woah WAVs so the FIRST drag doesn't pay the
+    // sync-decode cost. Without this, the initial drag stutters
+    // while the renderer decodes the audio on demand. After a few
+    // hundred ms the browser has decoded each file and subsequent
+    // plays are instant.
+    prewarmWoahs();
+  }
+
 })();

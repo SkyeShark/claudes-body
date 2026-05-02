@@ -1,12 +1,15 @@
 {
-  "name": "claude-says",
+  "name": "claudes-body",
   "version": "0.1.0",
-  "description": "A draggable, animated Claude that speaks Claude Code responses with tone-driven expressions",
+  "description": "Claude's Body — a draggable, animated Claude that speaks Claude Code responses with tone-driven expressions",
   "main": "main.js",
   "license": "MIT",
   "homepage": "https://github.com/SkyeShark/claudes-body",
   "scripts": {
     "start": "electron .",
+    "test": "node --test tests/*.test.mjs",
+    "capture-icon": "electron . --capture-icon",
+    "bake-voices": "node tools/bake-voice-lines.mjs",
     "install-hook": "node install.js",
     "uninstall-hook": "node install.js --remove",
     "build:win": "electron-builder --win",
@@ -19,8 +22,8 @@
     "electron-builder": "^25.0.0"
   },
   "build": {
-    "appId": "com.claudesays.app",
-    "productName": "Claude Says",
+    "appId": "com.claudesbody.app",
+    "productName": "Claude's Body",
     "files": [
       "main.js",
       "preload.js",
@@ -48,6 +51,9 @@
   },
   "dependencies": {
     "@pixiv/three-vrm": "^3.5.2",
+    "@pixiv/three-vrm-animation": "^3.5.2",
+    "cannon-es": "^0.20.0",
+    "kokoro-js": "^1.2.1",
     "three": "^0.184.0"
   }
 }
