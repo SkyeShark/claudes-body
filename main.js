@@ -478,7 +478,7 @@ function spawnKokoro() {
       const handler = kokoroPending.get(msg.id);
       if (!handler) continue;
       kokoroPending.delete(msg.id);
-      if (msg.ok) handler.resolve(msg.wav);
+      if (msg.ok) handler.resolve(msg.path);
       else        handler.reject(new Error(msg.error || 'kokoro error'));
     }
   });
@@ -515,9 +515,16 @@ ipcMain.handle('tts-synth', async (_event, text, gender) => {
   console.log('[kokoro] synth gender=', gender, 'voice=', voice, 'text=', JSON.stringify(text));
   try {
     const t0 = Date.now();
-    const wavB64 = await kokoroSynth(text, voice);
-    console.log('[kokoro] synth ok:', wavB64.length, 'b64 chars,', (Date.now() - t0) + 'ms');
-    return 'data:audio/wav;base64,' + wavB64;
+    const wavPath = await kokoroSynth(text, voice);
+    if (!wavPath) return null;
+    const sz = (() => { try { return fs.statSync(wavPath).size; } catch (_) { return 0; } })();
+    console.log('[kokoro] synth ok:', sz, 'bytes,', (Date.now() - t0) + 'ms,', path.basename(wavPath));
+    // Schedule deletion after the audio's almost certainly played out.
+    // 60s is conservative for any sentence-length response.
+    setTimeout(() => { try { fs.unlinkSync(wavPath); } catch (_) {} }, 60000);
+    // Return as a file:// URL the renderer can use directly with <Audio>.
+    // pathToFileURL handles the Windows backslash / drive-letter mangling.
+    return require('url').pathToFileURL(wavPath).href;
   } catch (e) {
     console.error('[kokoro] synth failed:', e?.message);
     return null;
