@@ -65460,6 +65460,18 @@ void main() {
       const m = VISEME_MAP[name];
       if (m) em.setValue(m, 0.9);
     }
+    function isNeutralMouth() {
+      return currentEmotion === "neutral" || currentEmotion === "relaxed" || currentEmotion === "rest";
+    }
+    function setMouthAmount(viseme, weight) {
+      const em = vrm.expressionManager;
+      if (!em) return;
+      if (isCatfaceLocked()) return;
+      const w2 = Math.max(0, Math.min(1, weight));
+      for (const k of ["aa", "ih", "ou", "ee", "oh"]) {
+        em.setValue(k, k === viseme ? w2 : 0);
+      }
+    }
     function setEyes() {
     }
     function setBrows() {
@@ -65543,16 +65555,14 @@ void main() {
         const audio = new Audio(url);
         audio.volume = opts.volume != null ? opts.volume : 1;
         audio.playbackRate = opts.playbackRate != null ? opts.playbackRate : 1;
+        audio.crossOrigin = "anonymous";
         currentAudio = audio;
-        const visemeTimer = setInterval(() => {
-          if (audio.paused || audio.ended) return;
-          setMouth(Math.random() < 0.5 ? "v_e" : "v_a");
-        }, 140);
+        const stopLipSync = attachLipSync(audio);
         let resolved = false;
         const finish = () => {
           if (resolved) return;
           resolved = true;
-          clearInterval(visemeTimer);
+          stopLipSync();
           setMouth("v_closed");
           if (currentAudio === audio) currentAudio = null;
           if (currentSpeakFinish === finish) currentSpeakFinish = null;
@@ -65583,18 +65593,113 @@ void main() {
       return _ttsKnownAvailable;
     }
     const chunkText = window.chunkText;
+    let _audioCtx = null;
+    function getAudioCtx() {
+      if (!_audioCtx) {
+        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      return _audioCtx;
+    }
+    function attachLipSync(audio) {
+      let stopped = false;
+      let toggleTimer = 0;
+      let raf = 0;
+      let ctx = null, source = null, analyser = null, freqData = null;
+      function startSpectral() {
+        ctx = getAudioCtx();
+        if (ctx.state === "suspended") ctx.resume().catch(() => {
+        });
+        try {
+          source = ctx.createMediaElementSource(audio);
+        } catch (_) {
+          return false;
+        }
+        analyser = ctx.createAnalyser();
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = 0.6;
+        source.connect(analyser);
+        analyser.connect(ctx.destination);
+        const bins = analyser.frequencyBinCount;
+        freqData = new Uint8Array(bins);
+        const sr = ctx.sampleRate;
+        function step() {
+          if (stopped) return;
+          if (audio.paused || audio.ended) {
+            setMouthAmount("aa", 0);
+            raf = requestAnimationFrame(step);
+            return;
+          }
+          if (!isNeutralMouth()) {
+            for (const k of ["aa", "ih", "ou", "ee", "oh"]) {
+              try {
+                vrm.expressionManager.setValue(k, 0);
+              } catch (_) {
+              }
+            }
+            raf = requestAnimationFrame(step);
+            return;
+          }
+          analyser.getByteFrequencyData(freqData);
+          let amp = 0;
+          for (let i = 0; i < bins; i++) amp += freqData[i];
+          amp /= bins * 255;
+          let wsum = 0, tsum = 0;
+          for (let i = 0; i < bins; i++) {
+            const hz = i / bins * (sr / 2);
+            const v = freqData[i];
+            wsum += hz * v;
+            tsum += v;
+          }
+          const centroid = tsum > 0 ? wsum / tsum : 0;
+          let viseme;
+          if (centroid < 700) viseme = "oh";
+          else if (centroid < 1100) viseme = "ou";
+          else if (centroid < 1800) viseme = "aa";
+          else if (centroid < 2700) viseme = "ee";
+          else viseme = "ih";
+          setMouthAmount(viseme, Math.min(1, amp * 4));
+          raf = requestAnimationFrame(step);
+        }
+        raf = requestAnimationFrame(step);
+        return true;
+      }
+      function startToggle() {
+        toggleTimer = setInterval(() => {
+          if (stopped || audio.paused || audio.ended) return;
+          if (isNeutralMouth()) return;
+          setMouth(Math.random() < 0.5 ? "v_e" : "v_a");
+        }, 140);
+      }
+      if (isNeutralMouth()) {
+        if (!startSpectral()) startToggle();
+      } else {
+        startToggle();
+      }
+      return () => {
+        stopped = true;
+        if (toggleTimer) clearInterval(toggleTimer);
+        if (raf) cancelAnimationFrame(raf);
+        if (source) try {
+          source.disconnect();
+        } catch (_) {
+        }
+        if (analyser) try {
+          analyser.disconnect();
+        } catch (_) {
+        }
+        setMouth("v_closed");
+      };
+    }
     function playOneChunk(url, opts, ownerFinish) {
       return new Promise((resolve) => {
         const audio = new Audio(url);
         audio.playbackRate = opts.rate != null ? opts.rate : 1;
         audio.volume = opts.volume != null ? opts.volume : 1;
+        audio.crossOrigin = "anonymous";
         currentAudio = audio;
-        const visemeTimer = setInterval(() => {
-          if (audio.paused || audio.ended) return;
-          setMouth(Math.random() < 0.5 ? "v_e" : "v_a");
-        }, 140);
+        const stopLipSync = attachLipSync(audio);
         const cleanup = () => {
-          clearInterval(visemeTimer);
+          stopLipSync();
           if (currentAudio === audio) currentAudio = null;
           resolve();
         };

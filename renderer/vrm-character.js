@@ -1216,6 +1216,29 @@ export async function createVrmClaude(canvasParent) {
     const m = VISEME_MAP[name];
     if (m) em.setValue(m, 0.9);
   }
+
+  // True only when the face is in a "neutral mouth" state — i.e. the
+  // emotion preset's own mouth shape isn't dominating. Visemes are
+  // shape keys made for the neutral mouth; layering them on a happy
+  // smile or sad frown produces a hybrid that doesn't read as either.
+  function isNeutralMouth() {
+    return currentEmotion === 'neutral'
+        || currentEmotion === 'relaxed'
+        || currentEmotion === 'rest';
+  }
+
+  // Continuous-weight viseme write for amplitude-driven lip sync on
+  // the neutral mouth. Bails on catface lock; otherwise just zeros
+  // and writes one viseme at the given weight.
+  function setMouthAmount(viseme, weight) {
+    const em = vrm.expressionManager;
+    if (!em) return;
+    if (isCatfaceLocked()) return;
+    const w = Math.max(0, Math.min(1, weight));
+    for (const k of ['aa','ih','ou','ee','oh']) {
+      em.setValue(k, k === viseme ? w : 0);
+    }
+  }
   function setEyes()  {} // SVG-only; no-op for parity with the API
   function setBrows() {} // SVG-only; no-op
 
@@ -1287,16 +1310,14 @@ export async function createVrmClaude(canvasParent) {
       const audio = new Audio(url);
       audio.volume       = opts.volume       != null ? opts.volume       : 1.0;
       audio.playbackRate = opts.playbackRate != null ? opts.playbackRate : 1.0;
+      audio.crossOrigin  = 'anonymous';
       currentAudio = audio;
-      const visemeTimer = setInterval(() => {
-        if (audio.paused || audio.ended) return;
-        setMouth(Math.random() < 0.5 ? 'v_e' : 'v_a');
-      }, 140);
+      const stopLipSync = attachLipSync(audio);
       let resolved = false;
       const finish = () => {
         if (resolved) return;
         resolved = true;
-        clearInterval(visemeTimer);
+        stopLipSync();
         setMouth('v_closed');
         if (currentAudio === audio) currentAudio = null;
         if (currentSpeakFinish === finish) currentSpeakFinish = null;
@@ -1330,21 +1351,127 @@ export async function createVrmClaude(canvasParent) {
   // <script> before this bundle) — same source the unit tests cover.
   const chunkText = window.chunkText;
 
-  // Play one already-synthesized audio URL with viseme animation.
-  // Resolves when audio ends, errors, or when speak() is preempted
-  // (currentSpeakFinish becomes a different fn).
+  // Lazy AudioContext — single instance reused across audio elements.
+  let _audioCtx = null;
+  function getAudioCtx() {
+    if (!_audioCtx) {
+      _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return _audioCtx;
+  }
+
+  // Drive mouth animation while audio plays. Branches on face state:
+  //   - NEUTRAL mouth: spectral analysis via Web Audio AnalyserNode,
+  //     selects viseme by spectral centroid (low → oh/ou, mid → aa,
+  //     high → ee/ih) and weighted by amplitude. Real lip-sync.
+  //   - EXPRESSION mouth (happy / sad / angry / surprised / catface):
+  //     fall back to the old random aa/ee toggle at ~7 Hz. Visemes
+  //     stack on the emotion's mouth shape, but the result reads as
+  //     "talking" without overwriting the smile/frown character.
+  // Returns a stop() function to detach.
+  function attachLipSync(audio) {
+    let stopped = false;
+    let toggleTimer = 0;
+    let raf = 0;
+    let ctx = null, source = null, analyser = null, freqData = null;
+
+    function startSpectral() {
+      ctx = getAudioCtx();
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      try { source = ctx.createMediaElementSource(audio); }
+      catch (_) { return false; }
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.6;
+      source.connect(analyser);
+      analyser.connect(ctx.destination);
+      const bins = analyser.frequencyBinCount;
+      freqData = new Uint8Array(bins);
+      const sr = ctx.sampleRate;
+      function step() {
+        if (stopped) return;
+        if (audio.paused || audio.ended) {
+          setMouthAmount('aa', 0);
+          raf = requestAnimationFrame(step);
+          return;
+        }
+        // If face shifted to an expression mid-clip, hand off to the
+        // toggle method on the fly.
+        if (!isNeutralMouth()) {
+          for (const k of ['aa','ih','ou','ee','oh']) {
+            try { vrm.expressionManager.setValue(k, 0); } catch (_) {}
+          }
+          // Keep stepping in case it returns to neutral.
+          raf = requestAnimationFrame(step);
+          return;
+        }
+        analyser.getByteFrequencyData(freqData);
+        let amp = 0;
+        for (let i = 0; i < bins; i++) amp += freqData[i];
+        amp /= bins * 255;
+        let wsum = 0, tsum = 0;
+        for (let i = 0; i < bins; i++) {
+          const hz = (i / bins) * (sr / 2);
+          const v  = freqData[i];
+          wsum += hz * v;
+          tsum += v;
+        }
+        const centroid = tsum > 0 ? wsum / tsum : 0;
+        let viseme;
+        if      (centroid < 700)  viseme = 'oh';
+        else if (centroid < 1100) viseme = 'ou';
+        else if (centroid < 1800) viseme = 'aa';
+        else if (centroid < 2700) viseme = 'ee';
+        else                       viseme = 'ih';
+        setMouthAmount(viseme, Math.min(1, amp * 4));
+        raf = requestAnimationFrame(step);
+      }
+      raf = requestAnimationFrame(step);
+      return true;
+    }
+
+    function startToggle() {
+      // Old random-toggle at ~7 Hz. Stacks on top of the emotion's
+      // mouth shape; result reads as "this character is talking"
+      // without the spectral analyzer trying to drive vowels that
+      // would clash with the expression.
+      toggleTimer = setInterval(() => {
+        if (stopped || audio.paused || audio.ended) return;
+        // Re-check state — face might have flipped to neutral.
+        if (isNeutralMouth()) return;
+        setMouth(Math.random() < 0.5 ? 'v_e' : 'v_a');
+      }, 140);
+    }
+
+    if (isNeutralMouth()) {
+      if (!startSpectral()) startToggle();
+    } else {
+      startToggle();
+    }
+
+    return () => {
+      stopped = true;
+      if (toggleTimer) clearInterval(toggleTimer);
+      if (raf) cancelAnimationFrame(raf);
+      if (source) try { source.disconnect(); } catch (_) {}
+      if (analyser) try { analyser.disconnect(); } catch (_) {}
+      setMouth('v_closed');
+    };
+  }
+
+  // Play one already-synthesized audio URL with amplitude-driven
+  // lip-sync. Resolves when audio ends, errors, or when speak() is
+  // preempted (currentSpeakFinish becomes a different fn).
   function playOneChunk(url, opts, ownerFinish) {
     return new Promise((resolve) => {
       const audio = new Audio(url);
       audio.playbackRate = opts.rate != null ? opts.rate : 1.0;
       audio.volume       = opts.volume != null ? opts.volume : 1.0;
+      audio.crossOrigin  = 'anonymous';
       currentAudio = audio;
-      const visemeTimer = setInterval(() => {
-        if (audio.paused || audio.ended) return;
-        setMouth(Math.random() < 0.5 ? 'v_e' : 'v_a');
-      }, 140);
+      const stopLipSync = attachLipSync(audio);
       const cleanup = () => {
-        clearInterval(visemeTimer);
+        stopLipSync();
         if (currentAudio === audio) currentAudio = null;
         resolve();
       };
