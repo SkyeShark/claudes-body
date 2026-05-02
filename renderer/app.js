@@ -120,8 +120,18 @@ async function speakItem({ text }) {
 
   const tone = analyzeTone(capped);
   if (tone.emotion) claude.setEmotion(tone.emotion);
+  // Pick a body anim:
+  //   - tone-driven gesture (greeting / victory / dismiss / etc.) if the
+  //     score is high enough — one-shot, auto-resumes idle when done.
+  //   - otherwise loop the 'talking' anim while speaking — claude looks
+  //     like he's actually delivering the line instead of standing
+  //     statue-still during long neutral responses.
+  let loopedTalking = false;
   if (tone.anim && tone.score >= ANIM_MIN_SCORE && claude.playAnimation) {
     claude.playAnimation(tone.anim);
+  } else if (claude.playAnimation) {
+    claude.playAnimation('talking', { loop: true });
+    loopedTalking = true;
   }
 
   await claude.speak(capped, {
@@ -129,6 +139,12 @@ async function speakItem({ text }) {
     voicePrefs: buildVoicePrefs(),
     muted:      settings.muted,
   });
+
+  // If we were on the looping 'talking' clip, transition back to
+  // looping idle now that speech is done.
+  if (loopedTalking && claude.playAnimation) {
+    claude.playAnimation('idle', { loop: true, fade: 0.4 });
+  }
 
   currentSpokenText = '';
 }
@@ -589,32 +605,27 @@ function applySettingsToUI() {
   // Try VRMA animations: preload a starter set so they're ready to play
   // on key/event triggers. Names map 1-9 to keyboard quick-play.
   if (claude.loadAnimation && claude.playAnimation) {
-    const ANIM_KEYS = [
-      ['1', 'greeting',   '../assets/animations/Standing Greeting.vrma'],
-      ['2', 'salute',     '../assets/animations/Salute.vrma'],
-      ['3', 'handraise',  '../assets/animations/Hand Raising.vrma'],
-      ['4', 'reachout',   '../assets/animations/Reaching Out.vrma'],
-      ['5', 'dismiss',    '../assets/animations/Dismissing Gesture.vrma'],
-      ['6', 'crazy',      '../assets/animations/Crazy Gesture.vrma'],
-      ['7', 'lookaway',   '../assets/animations/Look Away Gesture.vrma'],
-      ['8', 'thankful',   '../assets/animations/Thankful.vrma'],
-      ['9', 'victory',    '../assets/animations/Victory.vrma'],
-      ['0', 'cheering',   '../assets/animations/Cheering.vrma'],
-      ['t', 'talking',    '../assets/animations/Talking.vrma'],
-      ['i', 'idle',       '../assets/animations/Standing Idle.vrma'],
+    // VRMA clips loaded for tone-driven body anims. The idle clip is
+    // also loaded so the auto-resume handler can crossfade back to it
+    // after each one-shot ends.
+    const ANIM_LOAD = [
+      ['greeting',   '../assets/animations/Standing Greeting.vrma'],
+      ['salute',     '../assets/animations/Salute.vrma'],
+      ['handraise',  '../assets/animations/Hand Raising.vrma'],
+      ['reachout',   '../assets/animations/Reaching Out.vrma'],
+      ['dismiss',    '../assets/animations/Dismissing Gesture.vrma'],
+      ['crazy',      '../assets/animations/Crazy Gesture.vrma'],
+      ['lookaway',   '../assets/animations/Look Away Gesture.vrma'],
+      ['thankful',   '../assets/animations/Thankful.vrma'],
+      ['victory',    '../assets/animations/Victory.vrma'],
+      ['cheering',   '../assets/animations/Cheering.vrma'],
+      ['talking',    '../assets/animations/Talking.vrma'],
+      ['idle',       '../assets/animations/Standing Idle.vrma'],
     ];
-    for (const [, name, url] of ANIM_KEYS) {
+    for (const [name, url] of ANIM_LOAD) {
       try { await claude.loadAnimation(name, url); }
       catch (e) { console.warn('[vrma] failed to load', name, e); }
     }
-    document.addEventListener('keydown', (e) => {
-      if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
-      const map = ANIM_KEYS.find(([k]) => k === e.key);
-      if (!map) return;
-      const [, name] = map;
-      const loop = (name === 'idle' || name === 'talking');
-      claude.playAnimation(name, { loop });
-    });
 
     // Welcome wave — happy face + greeting clip + baked welcome WAV.
     // The static WAV plays instantly; no synth or IPC needed.
