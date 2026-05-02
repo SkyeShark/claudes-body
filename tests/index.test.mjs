@@ -114,10 +114,9 @@ describe('chunkText', () => {
     assert.match(out[0], /1\.2\.1/);
   });
 
-  test('splits at real sentence boundaries (when over maxLen)', () => {
-    // maxLen=20 forces each short sentence into its own chunk.
-    const out = chunkText('First sentence. Second sentence! Third sentence?', 20);
-    assert.ok(out.length >= 2, 'should split into multiple chunks');
+  test('always splits at sentence boundaries (no merging)', () => {
+    const out = chunkText('First sentence. Second sentence! Third sentence?');
+    assert.equal(out.length, 3, 'each sentence should be its own chunk');
   });
 
   test('keeps short single sentence as one chunk', () => {
@@ -127,12 +126,6 @@ describe('chunkText', () => {
 
   test('does NOT crash on empty input', () => {
     assert.deepEqual(chunkText(''), ['']);
-  });
-
-  test('respects maxLen by merging short sentences', () => {
-    const out = chunkText('Short one. Short two. Short three.', 100);
-    // All three short sentences should fit in one chunk under maxLen=100.
-    assert.equal(out.length, 1);
   });
 });
 

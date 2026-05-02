@@ -85,11 +85,14 @@ const TONE_RULES = [
 const ANIM_MIN_SCORE = 3;
 
 // Split text at REAL sentence boundaries (period+space+capital, or
-// end-of-text), merging short sentences up to maxLen. Avoids chopping
-// version strings like "0.1.7" into ".1"/".7" fragments — Kokoro
-// would synth those as orphan numbers and the listener would only
-// hear the trailing fragment.
-function chunkText(text, maxLen = 250) {
+// end-of-text). Avoids chopping version strings like "0.1.7" into
+// ".1"/".7" fragments. Every sentence becomes its own chunk so the
+// first one plays as soon as it's synthed (~3s for typical sentences)
+// instead of waiting for all sentences to merge (~12s+ for long
+// responses). The maxLen parameter only kicks in for very long
+// single sentences with no internal breaks; we keep it as one chunk
+// rather than hard-splitting mid-clause.
+function chunkText(text, maxLen = 400) {
   const sentences = [];
   let last = 0;
   const pattern = /[.!?]+\s+(?=[A-Z])|[.!?]+\s*$/g;
@@ -101,18 +104,11 @@ function chunkText(text, maxLen = 250) {
   if (last < text.length) sentences.push(text.slice(last).trim());
   const filtered = sentences.filter(s => s.length > 0);
   if (filtered.length === 0) return [text];
-  const chunks = [];
-  let cur = '';
-  for (const s of filtered) {
-    if (cur.length + s.length + 1 <= maxLen) {
-      cur = cur ? cur + ' ' + s : s;
-    } else {
-      if (cur) chunks.push(cur);
-      cur = s;
-    }
-  }
-  if (cur) chunks.push(cur);
-  return chunks;
+  // Don't merge — each sentence is its own chunk. Kokoro synths them
+  // serially in the worker; while chunk 1 plays, chunk 2 is already
+  // being synthed, so playback is smooth without the front-load wait.
+  // (maxLen is now a soft hint kept for the test interface.)
+  return filtered;
 }
 
 function analyzeTone(text) {
