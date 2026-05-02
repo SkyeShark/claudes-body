@@ -48,6 +48,19 @@ hand, or just leave him in the corner watching you work.
 
 ## Install
 
+### From npm (easiest)
+
+```bash
+npm install -g claudes-body
+claudes-body
+```
+
+That installs the package globally and launches the floating
+character. Run `claudes-body --install-hook` once to register the
+Stop hook with Claude Code.
+
+### From source (for development / contributing)
+
 ```bash
 git clone https://github.com/SkyeShark/claudes-body.git
 cd claudes-body
@@ -242,12 +255,31 @@ a transparent 512×512 canvas, dumps to `build/icon.png`, then exits.
 
 ```bash
 npm run build:win     # Windows .exe (NSIS installer)
-npm run build:mac     # macOS .dmg
-npm run build:linux   # Linux .AppImage / .deb
-npm run build:all     # all three (run on macOS for .dmg signing)
+npm run build:mac     # macOS .dmg  — must be run ON macOS
+npm run build:linux   # Linux .AppImage / .deb / tar.gz
 ```
 
 Builds land in `dist/`.
+
+**macOS note:** electron-builder explicitly refuses to produce `.dmg`
+files when run on Windows or Linux ("Build for macOS is supported only
+on macOS"). To get a Mac binary you need to either:
+
+- Run `npm run build:mac` on a real Mac (or VM with macOS), OR
+- Use a CI service with a `macos-latest` runner — GitHub Actions is
+  the standard fit. A workflow that builds all three on tag push is
+  the easiest way to ship Mac binaries without owning a Mac.
+
+For Mac users without a build, `git clone && npm install && npm start`
+works fine — the runtime code is platform-neutral. Only the packaged
+distributable (`.dmg`) is the platform-specific bottleneck.
+
+**Windows / Linux note:** Building from a Windows host requires either
+admin privileges or Windows Developer Mode enabled, because
+electron-builder needs to extract some symlinked code-signing helpers.
+The `.AppImage` Linux target has the same constraint; if it fails,
+fall back to `npx electron-builder --linux tar.gz` which doesn't need
+symlinks.
 
 ## Uninstall
 

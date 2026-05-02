@@ -5,6 +5,29 @@
   "main": "main.js",
   "license": "MIT",
   "homepage": "https://github.com/SkyeShark/claudes-body",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SkyeShark/claudes-body.git"
+  },
+  "keywords": ["claude", "claude-code", "tts", "vrm", "electron", "desktop-overlay"],
+  "bin": {
+    "claudes-body": "bin/claudes-body.js"
+  },
+  "files": [
+    "bin/",
+    "main.js",
+    "preload.js",
+    "hook.js",
+    "install.js",
+    "renderer/**/*",
+    "assets/**/*",
+    "tools/kokoro-worker.mjs",
+    "tools/wav-utils.mjs",
+    "build/icon.png"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "electron .",
     "test": "node --test tests/*.test.mjs",
@@ -18,7 +41,6 @@
     "build:all": "electron-builder -mwl"
   },
   "devDependencies": {
-    "electron": "^32.0.0",
     "electron-builder": "^25.0.0"
   },
   "build": {
@@ -53,6 +75,7 @@
     "@pixiv/three-vrm": "^3.5.2",
     "@pixiv/three-vrm-animation": "^3.5.2",
     "cannon-es": "^0.20.0",
+    "electron": "^32.0.0",
     "kokoro-js": "^1.2.1",
     "three": "^0.184.0"
   }
