@@ -30,19 +30,15 @@ function cleanForSpeech(input) {
 
   text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 
-  // Strip raw URLs and emails — Kokoro will spell them character-by-
-  // character and produce gibberish. Filenames and code identifiers
-  // are deliberately left in: Kokoro pronounces them reasonably (e.g.
-  // "app.js" → "app dot J S") and the user wants to hear them.
-  text = text.replace(/\bhttps?:\/\/\S+/gi, ' link ');
-  text = text.replace(/\bwww\.\S+/gi,       ' link ');
-  // Email: local@domain.tld where the TLD is at least 2 alphabetic
-  // chars. Stops "package@1.2.3" version strings from being treated
-  // as emails (the previous \S+@\S+\.\S+ pattern was too loose).
-  text = text.replace(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[a-zA-Z]{2,}\b/g, ' email ');
+  // Strip raw URLs only if they're long enough to be tedious. Short
+  // URLs ("fish.audio", "https://x.com") read fine; long ones with
+  // paths and query strings spell out for many seconds.
+  const URL_MAX = 28;
+  text = text.replace(/\bhttps?:\/\/\S+/gi, m => m.length > URL_MAX ? ' link ' : m);
+  text = text.replace(/\bwww\.\S+/gi,       m => m.length > URL_MAX ? ' link ' : m);
 
-  // Long base64-ish hashes (20+ chars of mixed letters and digits with
-  // no separator). These sound like noise; drop silently.
+  // Long base64-ish hashes (20+ chars of mixed letters and digits
+  // with no separator). These sound like noise; drop silently.
   text = text.replace(/\b(?=\w{20,}\b)(?=\w*\d)(?=\w*[A-Za-z])\w+/g, ' ');
 
   // Symbol-run decorations like "====", "----", "****". Pure visual

@@ -48,18 +48,25 @@ describe('cleanForSpeech', () => {
     assert.match(out, /text-utils\.js/);
   });
 
-  test('strips full URLs to "link"', () => {
-    assert.match(cleanForSpeech('See https://example.com/foo here'), /\blink\b/);
+  test('keeps short URLs (Kokoro reads them naturally)', () => {
+    const out = cleanForSpeech('Visit fish.audio for the model');
+    assert.match(out, /fish\.audio/);
   });
 
-  test('strips email addresses to "email"', () => {
-    assert.match(cleanForSpeech('Mail foo@bar.com please'), /\bemail\b/);
+  test('strips only long URLs to "link"', () => {
+    const out = cleanForSpeech('See https://example.com/very/long/path/file.html for docs');
+    assert.match(out, /\blink\b/);
+    assert.doesNotMatch(out, /very\/long\/path/);
   });
 
-  test('does NOT treat package@version strings as emails', () => {
+  test('passes emails through unchanged', () => {
+    const out = cleanForSpeech('Mail foo@bar.com please');
+    assert.match(out, /foo@bar\.com/);
+  });
+
+  test('passes package@version strings through unchanged', () => {
     const out = cleanForSpeech('Published claudes-body@0.1.5 today');
     assert.match(out, /claudes-body@0\.1\.5/);
-    assert.doesNotMatch(out, /\bemail\b/);
   });
 
   test('drops long base64-ish hashes silently', () => {
