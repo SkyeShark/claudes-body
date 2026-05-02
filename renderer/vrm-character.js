@@ -1571,13 +1571,15 @@ export async function createVrmClaude(canvasParent) {
   // amplitude in radians, freq = Hz, ampX = peak X-axis (up-down)
   // bias for tail droop/perk. Spring bones smear and propagate this
   // through the rest of the chain naturally.
+  // Spring-bone sim damps small motions; amplitudes need to be bold
+  // for the wag to actually read on the rendered tail.
   const TAIL_PROFILES = {
-    happy:     { ampY: 0.45, freq: 1.8, ampX:  0.10 },
-    catface:   { ampY: 0.25, freq: 0.6, ampX:  0.05 },
-    surprised: { ampY: 0.05, freq: 0.4, ampX:  0.20 }, // puffed up, mostly still
-    sad:       { ampY: 0.08, freq: 0.5, ampX: -0.25 }, // tucked low
-    angry:     { ampY: 0.55, freq: 2.6, ampX: -0.05 }, // sharp lashing
-    neutral:   { ampY: 0.10, freq: 0.6, ampX:  0.00 }, // gentle idle sway
+    happy:     { ampY: 0.80, freq: 2.0, ampX:  0.15 }, // ~46°, fast & big
+    catface:   { ampY: 0.55, freq: 0.7, ampX:  0.10 }, // ~32°, slow swish
+    surprised: { ampY: 0.10, freq: 0.4, ampX:  0.30 }, // puffed up, mostly still
+    sad:       { ampY: 0.15, freq: 0.5, ampX: -0.35 }, // tucked low
+    angry:     { ampY: 0.95, freq: 2.8, ampX: -0.05 }, // sharp lashing
+    neutral:   { ampY: 0.25, freq: 0.7, ampX:  0.00 }, // gentle idle sway
   };
   const _tailQ = new THREE.Quaternion();
   const _tailE = new THREE.Euler();

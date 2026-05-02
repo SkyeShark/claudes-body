@@ -65793,15 +65793,17 @@ void main() {
       });
     }
     const TAIL_PROFILES = {
-      happy: { ampY: 0.45, freq: 1.8, ampX: 0.1 },
-      catface: { ampY: 0.25, freq: 0.6, ampX: 0.05 },
-      surprised: { ampY: 0.05, freq: 0.4, ampX: 0.2 },
+      happy: { ampY: 0.8, freq: 2, ampX: 0.15 },
+      // ~46°, fast & big
+      catface: { ampY: 0.55, freq: 0.7, ampX: 0.1 },
+      // ~32°, slow swish
+      surprised: { ampY: 0.1, freq: 0.4, ampX: 0.3 },
       // puffed up, mostly still
-      sad: { ampY: 0.08, freq: 0.5, ampX: -0.25 },
+      sad: { ampY: 0.15, freq: 0.5, ampX: -0.35 },
       // tucked low
-      angry: { ampY: 0.55, freq: 2.6, ampX: -0.05 },
+      angry: { ampY: 0.95, freq: 2.8, ampX: -0.05 },
       // sharp lashing
-      neutral: { ampY: 0.1, freq: 0.6, ampX: 0 }
+      neutral: { ampY: 0.25, freq: 0.7, ampX: 0 }
       // gentle idle sway
     };
     const _tailQ = new Quaternion();
