@@ -11,6 +11,7 @@ set -e
 ROOT="C:/Users/sdn52/OneDrive/Desktop/claudethinking"
 TOOLS="$ROOT/claude-says/tools"
 ASSETS="$ROOT/claude-says/assets"
+MODELS="$ROOT/claude-says/models"
 TMP="$ROOT/_scaled.vrm"
 
 TARGET_HEIGHT="${TARGET_HEIGHT:-2.21}"
@@ -39,8 +40,11 @@ echo "=== Step 3: extract pose from claudelatest.vrm ==="
 node "$TOOLS/extract-pose.js" "$ROOT/claudelatest.vrm" "$ROOT/claude.pose.json"
 
 echo ""
-echo "=== Step 4: mirror to assets/ ==="
+echo "=== Step 4: mirror to assets/ + models/ ==="
 cp "$ROOT/claude.vrm" "$ASSETS/claude.vrm"
 cp "$ROOT/claude.pose.json" "$ASSETS/claude.pose.json"
+# Also keep the publicly-shareable copy in models/ in sync — that's what
+# external VRChat / Unity / Blender users grab off GitHub.
+cp "$ROOT/claude.vrm" "$MODELS/Claude_Toon.vrm"
 rm -f "$TMP"
 ls -lh "$ROOT/claude.vrm" "$ROOT/claude.pose.json"

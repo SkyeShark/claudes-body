@@ -24,7 +24,7 @@ real-world scale, no inheritance tricks above the humanoid root.
 
 - **Humanoid bones** (Hips → Spine → Head, both arms, both legs, plus
   toe bones)
-- **Tail bones** (`tailbase` → `tail.001..007` → `tailtip`) configured as
+- **Tail bones** (`tailbase` → `tail001..007` → `tailtip`) configured as
   a `VRMC_springBone` chain so the tail wags physically
 - **Expression presets** (`VRMC_vrm.expressions.preset`):
   - Visemes: `aa`, `ih`, `ou`, `ee`, `oh` (lip-sync)
