@@ -65566,6 +65566,7 @@ void main() {
           setMouth("v_closed");
           if (currentAudio === audio) currentAudio = null;
           if (currentSpeakFinish === finish) currentSpeakFinish = null;
+          closeAudioCtx();
           resolve();
         };
         currentSpeakFinish = finish;
@@ -65596,9 +65597,23 @@ void main() {
     let _audioCtx = null;
     function getAudioCtx() {
       if (!_audioCtx) {
-        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        try {
+          _audioCtx = new Ctx({ latencyHint: "playback", sampleRate: 24e3 });
+        } catch (_) {
+          _audioCtx = new Ctx();
+        }
       }
       return _audioCtx;
+    }
+    async function closeAudioCtx() {
+      if (!_audioCtx) return;
+      const ctx = _audioCtx;
+      _audioCtx = null;
+      try {
+        await ctx.close();
+      } catch (_) {
+      }
     }
     function attachLipSync(audio) {
       let stopped = false;
@@ -65742,6 +65757,7 @@ void main() {
           resolved = true;
           setMouth("v_closed");
           if (currentSpeakFinish === finish) currentSpeakFinish = null;
+          closeAudioCtx();
           resolve();
         };
         currentSpeakFinish = finish;

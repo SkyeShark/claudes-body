@@ -1321,6 +1321,7 @@ export async function createVrmClaude(canvasParent) {
         setMouth('v_closed');
         if (currentAudio === audio) currentAudio = null;
         if (currentSpeakFinish === finish) currentSpeakFinish = null;
+        closeAudioCtx();
         resolve();
       };
       currentSpeakFinish = finish;
@@ -1351,13 +1352,30 @@ export async function createVrmClaude(canvasParent) {
   // <script> before this bundle) — same source the unit tests cover.
   const chunkText = window.chunkText;
 
-  // Lazy AudioContext — single instance reused across audio elements.
+  // Lazy AudioContext — single instance reused across audio elements
+  // for the duration of one speak() call. Closed (and recreated next
+  // time) at end of speech so we don't keep an idle OS audio session
+  // open. An open-but-idle session causes Chromium to suspend/resume
+  // it on page activity (3D repaint, scroll, focus), and on Windows
+  // each transition produces an audible "doot".
   let _audioCtx = null;
   function getAudioCtx() {
     if (!_audioCtx) {
-      _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      // latencyHint: 'playback' tells Chromium we're not doing real-time
+      // audio, so buffer aggressively (fewer underruns when the renderer
+      // is busy). sampleRate: 24000 matches Kokoro's WAV output exactly,
+      // skipping the resampler stage entirely.
+      try { _audioCtx = new Ctx({ latencyHint: 'playback', sampleRate: 24000 }); }
+      catch (_) { _audioCtx = new Ctx(); }
     }
     return _audioCtx;
+  }
+  async function closeAudioCtx() {
+    if (!_audioCtx) return;
+    const ctx = _audioCtx;
+    _audioCtx = null;
+    try { await ctx.close(); } catch (_) {}
   }
 
   // Drive mouth animation while audio plays. Branches on face state:
@@ -1514,6 +1532,10 @@ export async function createVrmClaude(canvasParent) {
         resolved = true;
         setMouth('v_closed');
         if (currentSpeakFinish === finish) currentSpeakFinish = null;
+        // Release the OS audio session so an idle context can't get
+        // suspended/resumed by Chromium during scroll/repaint and emit
+        // a "doot". Next speak() lazily makes a fresh one.
+        closeAudioCtx();
         resolve();
       };
       currentSpeakFinish = finish;

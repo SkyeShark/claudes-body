@@ -1,6 +1,6 @@
 {
   "name": "claudes-body",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "Claude's Body — a draggable, animated Claude that speaks Claude Code responses with tone-driven expressions",
   "main": "main.js",
   "license": "MIT",
