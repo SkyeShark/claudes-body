@@ -10,6 +10,11 @@ function cleanForSpeech(input) {
   // strip XML/HTML-ish tags (system reminders, command output blocks, etc.)
   text = text.replace(/<[^>]+>/g, ' ');
 
+  // ":3" emoticon → "meow". Otherwise Kokoro reads it as the digit "3"
+  // and you lose the cat-face energy. \b after the 3 keeps timestamps
+  // ("1:32") and clock notation safe.
+  text = text.replace(/:3\b/g, ' meow ');
+
   // fenced code blocks → "code block" placeholder so we don't read code aloud
   text = text.replace(/```[\s\S]*?```/g, ' . code block . ');
 
@@ -62,7 +67,7 @@ function capLength(text, cap) {
 
 const TONE_RULES = [
   { emotion: 'catface', anim: 'crazy',     score: 5,
-    re: /(?::3\b|\b(?:smug|mischievous|cheeky|sly|teehee|hehehe|gotcha|nyah|nya~?|purr|kitty)\b)/i },
+    re: /(?::3\b|\b(?:meow|smug|mischievous|cheeky|sly|teehee|hehehe|gotcha|nyah|nya~?|purr|kitty)\b)/i },
   { emotion: 'happy',   anim: 'greeting',  score: 4,
     re: /\b(hi|hello|hey|howdy|greetings|good morning|good afternoon|good evening)\b/i },
   { emotion: 'happy',   anim: 'thankful',  score: 4,
