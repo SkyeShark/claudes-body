@@ -97,7 +97,11 @@ let skipRequested = false;
 let currentSpokenText = '';
 // While the welcome line is playing, defer every other speech item so
 // a Stop hook from another Claude Code project can't preempt it.
-let welcomeBlocking = false;
+// Starts true so any IPC `say` that arrives before boot completes
+// (e.g. queued in the spool file) gets buffered until claude is ready
+// — otherwise speakItem hits the VRM backend before it exists, throws,
+// and speaking=true gets stuck, blocking the queue forever.
+let welcomeBlocking = true;
 
 async function processQueue() {
   if (welcomeBlocking) return;
@@ -105,8 +109,15 @@ async function processQueue() {
   if (queue.length === 0) return;
   speaking = true;
   const item = queue.shift();
-  await speakItem(item);
-  speaking = false;
+  try {
+    await speakItem(item);
+  } catch (e) {
+    console.error('[speak] item failed:', e);
+  } finally {
+    // Always release the speaking lock — if we throw and don't, the
+    // queue is dead until the page reloads.
+    speaking = false;
+  }
   // small breath between items
   setTimeout(processQueue, 220);
 }

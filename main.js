@@ -94,6 +94,14 @@ function createWindow() {
     maximizable: false,
     fullscreenable: false,
     backgroundColor: '#00000000',
+    // Don't grab keyboard focus. Otherwise keystrokes you mean for the
+    // app underneath can route to this window when it briefly has focus
+    // (after a click / alt-tab), and since nothing in the renderer
+    // handles them Windows plays the system "ding". Mouse events still
+    // work (focusable=false only denies keyboard focus), and the global
+    // Ctrl+Shift+L lock toggle is registered via globalShortcut so it's
+    // focus-agnostic.
+    focusable: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
