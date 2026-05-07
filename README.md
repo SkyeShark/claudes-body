@@ -17,9 +17,9 @@ hand, or just leave him in the corner watching you work.
 
 ## Highlights
 
-- **Real 3D body** — VRM model rendered with three.js + three-vrm,
-  toon-shaded with MToon, with proper humanoid bones, blend-shape
-  expressions, and a spring-bone tail.
+- **Real 3D body** — Original hand-made (by SkyeShark!) VRM model rendered 
+  with three.js + three-vrm,  toon-shaded with MToon, with proper 
+  humanoid bones, blend-shape expressions, and a spring-bone tail.
 - **Local neural TTS** — [Kokoro 82M](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX)
   running locally via ONNX. Two voices: Michael (Male) and Bella
   (Female). No API keys, no network calls after first download.
