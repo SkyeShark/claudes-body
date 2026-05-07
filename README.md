@@ -8,7 +8,8 @@ A 3D Claude that floats on your desktop and speaks Claude Code's responses
 out loud — with a real cartoon body, neural TTS, ragdoll physics when you
 grab him, and tone-driven facial expressions, gestures, and tail wags.
 
-The character is the cartoon version of Claude from the internet: a
+The character is a 3d VRM model of the cartoon of Claude 
+created by https://github.com/vgel, the "Claudesona": a
 12-petal rust-orange starburst mane around a round face, simple
 line-drawing features, purple sweater, blue jeans, orange tail. He
 hangs out in a transparent floating window — drag him around, grab his
