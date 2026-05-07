@@ -1,6 +1,6 @@
 {
   "name": "claudes-body",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Claude's Body — a draggable, animated Claude that speaks Claude Code responses with tone-driven expressions",
   "main": "main.js",
   "license": "MIT",
@@ -9,7 +9,14 @@
     "type": "git",
     "url": "git+https://github.com/SkyeShark/claudes-body.git"
   },
-  "keywords": ["claude", "claude-code", "tts", "vrm", "electron", "desktop-overlay"],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "tts",
+    "vrm",
+    "electron",
+    "desktop-overlay"
+  ],
   "bin": {
     "claudes-body": "bin/claudes-body.js"
   },
