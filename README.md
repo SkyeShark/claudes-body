@@ -70,8 +70,18 @@ Then register the Stop hook with Claude Code once:
 claudes-body --install-hook
 ```
 
-Works on Windows, macOS, and Linux — npm pulls the platform-appropriate
-Electron binary as part of `npm install`.
+**Runtime by platform (0.2.0+):** the character, voice, and behavior are
+identical everywhere, but the host differs:
+
+- **Windows** runs a lightweight **Deno + WebView2** host — *no bundled
+  Chromium*. The first launch downloads a ~40 MB Deno runtime once (to
+  `~/.claudes-body/`) and installs a small native webview binary, then uses
+  the WebView2 that's already built into Windows 10/11.
+- **macOS / Linux** run **Electron**, exactly as before. `npm install` pulls
+  the platform-appropriate Electron binary.
+
+(The Windows window management uses Win32 APIs, so the Deno host is
+Windows-only for now; macOS/Linux stay on the proven Electron path.)
 
 ### From source (for development / contributing)
 
@@ -113,8 +123,18 @@ push using a `macos-latest` runner — PRs welcome.
 
 ## Run
 
+A global install gives you the cross-platform launcher, which picks the right
+host automatically (Deno on Windows, Electron on macOS/Linux):
+
 ```bash
-npm start
+claudes-body
+```
+
+From a source checkout:
+
+```bash
+npm start          # Electron host (all platforms)
+npm run start:deno # Windows Deno + WebView2 host (deno-host/)
 ```
 
 A small transparent window appears in the bottom-right of your primary
@@ -209,6 +229,15 @@ Edit the rule table in `renderer/text-utils.js` to tune the keywords.
 If the floating window isn't running, the hook silently no-ops — your
 terminal session is never blocked.
 
+**Windows host (0.2.0+):** on Windows the Electron shell above is replaced by
+a **Deno + tao/wry webview host** (`deno-host/`) — the same renderer, tone
+analyzer, and Kokoro worker, just hosted by Deno + the OS WebView2 instead of
+Electron's bundled Chromium. A Deno worker serves the renderer over
+`127.0.0.1` and runs the Kokoro TTS subprocess; the main Deno process owns the
+transparent window (Win32 FFI for move/resize/click-through/hotkey/DPI) and
+recreates the renderer's `window.cs` bridge so `renderer/` runs unchanged.
+macOS/Linux use the Electron shell shown above.
+
 ## Components
 
 ### Renderer (`renderer/`)
@@ -221,13 +250,25 @@ terminal session is never blocked.
   shared with the test suite)
 - `character.js` — legacy SVG fallback (used only if VRM load fails)
 
-### Main process (`main.js`)
+### Main process — macOS / Linux (`main.js`, Electron)
 - Transparent always-on-top frameless window
 - HTTP server on `127.0.0.1:7777` for the Stop hook
 - Spool-file watcher for transcript ingestion
 - Kokoro child-process management (spawn, JSON-RPC over stdio,
   health monitoring)
 - Window state persistence
+
+### Windows host (`deno-host/`, Deno + WebView2 — 0.2.0+)
+- `main.js` — transparent/frameless/always-on-top window, the `window.cs`
+  IPC bridge (so `renderer/` runs unchanged), spool + transcript watchers,
+  Win32 FFI for move/resize/click-through/Ctrl+Shift+L/DPI placement, custom
+  window icon
+- `server.worker.js` — localhost static server (renderer + assets) + `/api/state`
+  + Kokoro TTS (spawns `tools/kokoro-worker.mjs`, caches/coalesces synth, serves
+  WAVs over HTTP so they play through the same `<audio>` path)
+- `win32.js` — `user32.dll` FFI helpers
+- Launched by `bin/claudes-body.js`, which downloads Deno once and installs
+  the native `@webviewjs/webview` binary on first run
 
 ### Tools (`tools/`)
 - `bake-voice-lines.mjs` (`npm run bake-voices`) — pre-renders the
