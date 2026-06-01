@@ -64803,6 +64803,10 @@ void main() {
       bones.hips?.parent?.name
     );
     let currentEmotion = "neutral";
+    const EMO_KEYS = ["happy", "sad", "angry", "surprised", "relaxed", "catface"];
+    const emoCur = { happy: 0, sad: 0, angry: 0, surprised: 0, relaxed: 0, catface: 0 };
+    const emoTgt = { happy: 0, sad: 0, angry: 0, surprised: 0, relaxed: 0, catface: 0 };
+    const EMO_LERP = 0.1;
     let dragging = false;
     let isBlinking = false;
     const restRot = {};
@@ -65411,7 +65415,6 @@ void main() {
       currentEmotion = name;
       const em = vrm.expressionManager;
       if (!em) return;
-      ["happy", "sad", "angry", "surprised", "relaxed", "catface", "neutral"].forEach((k) => em.setValue(k, 0));
       const map = {
         happy: "happy",
         warm: "happy",
@@ -65430,8 +65433,12 @@ void main() {
         rest: "relaxed"
       };
       const m = map[name];
-      if (m) em.setValue(m, 1);
-      if (m === "catface") catfaceLockUntil = performance.now() + CATFACE_HOLD_MS;
+      for (const k of EMO_KEYS) emoTgt[k] = k === m ? 1 : 0;
+      if (m === "catface") {
+        emoCur.catface = 1;
+        em.setValue("catface", 1);
+        catfaceLockUntil = performance.now() + CATFACE_HOLD_MS;
+      }
     }
     const VISEME_MAP = {
       v_closed: null,
@@ -65620,6 +65627,10 @@ void main() {
       let toggleTimer = 0;
       let raf = 0;
       let ctx = null, source = null, analyser = null, freqData = null;
+      let started = false;
+      audio.addEventListener("playing", () => {
+        started = true;
+      }, { once: true });
       function startSpectral() {
         ctx = getAudioCtx();
         if (ctx.state === "suspended") ctx.resume().catch(() => {
@@ -65639,7 +65650,7 @@ void main() {
         const sr = ctx.sampleRate;
         function step() {
           if (stopped) return;
-          if (audio.paused || audio.ended) {
+          if (!started || audio.paused || audio.ended) {
             setMouthAmount("aa", 0);
             raf = requestAnimationFrame(step);
             return;
@@ -65680,7 +65691,7 @@ void main() {
       }
       function startToggle() {
         toggleTimer = setInterval(() => {
-          if (stopped || audio.paused || audio.ended) return;
+          if (stopped || !started || audio.paused || audio.ended) return;
           if (isNeutralMouth()) return;
           setMouth(Math.random() < 0.5 ? "v_e" : "v_a");
         }, 140);
@@ -65859,6 +65870,15 @@ void main() {
         animClock.getDelta();
       } else {
         animMixer.update(animClock.getDelta());
+      }
+      if (vrm.expressionManager) {
+        for (const k of EMO_KEYS) {
+          if (emoCur[k] !== emoTgt[k]) {
+            emoCur[k] += (emoTgt[k] - emoCur[k]) * EMO_LERP;
+            if (Math.abs(emoTgt[k] - emoCur[k]) < 4e-3) emoCur[k] = emoTgt[k];
+            vrm.expressionManager.setValue(k, emoCur[k]);
+          }
+        }
       }
       if (vrm.expressionManager) vrm.expressionManager.update();
       driveTail(now);

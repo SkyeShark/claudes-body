@@ -1,7 +1,7 @@
 {
   "name": "claudes-body",
-  "version": "0.1.17",
-  "description": "Claude's Body — a draggable, animated Claude that speaks Claude Code responses with tone-driven expressions",
+  "version": "0.2.0",
+  "description": "Claude's Body — a draggable, animated Claude that speaks Claude Code responses with tone-driven expressions. Windows runs a lightweight Deno + WebView2 host (no Electron); macOS/Linux use Electron.",
   "main": "main.js",
   "license": "MIT",
   "homepage": "https://github.com/SkyeShark/claudes-body",
@@ -15,6 +15,8 @@
     "tts",
     "vrm",
     "electron",
+    "deno",
+    "webview",
     "desktop-overlay"
   ],
   "bin": {
@@ -30,13 +32,21 @@
     "assets/**/*",
     "tools/kokoro-worker.mjs",
     "tools/wav-utils.mjs",
-    "build/icon.png"
+    "build/icon.png",
+    "deno-host/main.js",
+    "deno-host/server.worker.js",
+    "deno-host/win32.js",
+    "deno-host/deno.json",
+    "deno-host/package.json",
+    "deno-host/package-lock.json",
+    "deno-host/icon-256.rgba"
   ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "start": "electron .",
+    "start:deno": "cd deno-host && deno task start",
     "test": "node --test tests/*.test.mjs",
     "capture-icon": "electron . --capture-icon",
     "bake-voices": "node tools/bake-voice-lines.mjs",

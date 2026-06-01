@@ -18,3 +18,4 @@ tools/screenshots/
 # Scratch files from tools (synth tests, pcm dumps, etc.)
 /_*.wav
 /_*.png
+bin-test.*

@@ -383,6 +383,13 @@ export async function createVrmClaude(canvasParent) {
 
   // Initial state
   let currentEmotion = 'neutral';
+  // Smooth facial-expression easing: setEmotion() sets targets, tick() lerps
+  // the actual blendshape weights so the face glides between expressions
+  // instead of snapping (clip-to-frame).
+  const EMO_KEYS = ['happy', 'sad', 'angry', 'surprised', 'relaxed', 'catface'];
+  const emoCur = { happy: 0, sad: 0, angry: 0, surprised: 0, relaxed: 0, catface: 0 };
+  const emoTgt = { happy: 0, sad: 0, angry: 0, surprised: 0, relaxed: 0, catface: 0 };
+  const EMO_LERP = 0.1; // ~0.3-0.4s glide at 60fps
   let dragging = false;
   let isBlinking = false;
   // The authored VRM file already includes a proper standing pose (legs,
@@ -1180,8 +1187,6 @@ export async function createVrmClaude(canvasParent) {
     currentEmotion = name;
     const em = vrm.expressionManager;
     if (!em) return;
-    // Clear every face-driving expression so they don't stack.
-    ['happy','sad','angry','surprised','relaxed','catface','neutral'].forEach(k => em.setValue(k, 0));
     const map = {
       happy: 'happy', warm: 'happy', amused: 'happy',
       surprised: 'surprised', wonder: 'surprised',
@@ -1191,8 +1196,10 @@ export async function createVrmClaude(canvasParent) {
       neutral: 'relaxed', relaxed: 'relaxed', rest: 'relaxed',
     };
     const m = map[name];
-    if (m) em.setValue(m, 1);
-    if (m === 'catface') catfaceLockUntil = performance.now() + CATFACE_HOLD_MS;
+    // Set easing targets; tick() lerps the actual weights so the face
+    // transitions smoothly. catface snaps in (it's a quick reaction pose).
+    for (const k of EMO_KEYS) emoTgt[k] = (k === m) ? 1 : 0;
+    if (m === 'catface') { emoCur.catface = 1; em.setValue('catface', 1); catfaceLockUntil = performance.now() + CATFACE_HOLD_MS; }
   }
 
   // --- mouth / visemes ---
@@ -1392,6 +1399,11 @@ export async function createVrmClaude(canvasParent) {
     let toggleTimer = 0;
     let raf = 0;
     let ctx = null, source = null, analyser = null, freqData = null;
+    // Only drive the mouth once audio is ACTUALLY playing. audio.play() flips
+    // .paused to false instantly, but over HTTP the sound doesn't start until
+    // the buffer fills — without this gate the mouth flaps ahead of the voice.
+    let started = false;
+    audio.addEventListener('playing', () => { started = true; }, { once: true });
 
     function startSpectral() {
       ctx = getAudioCtx();
@@ -1408,7 +1420,7 @@ export async function createVrmClaude(canvasParent) {
       const sr = ctx.sampleRate;
       function step() {
         if (stopped) return;
-        if (audio.paused || audio.ended) {
+        if (!started || audio.paused || audio.ended) {
           setMouthAmount('aa', 0);
           raf = requestAnimationFrame(step);
           return;
@@ -1454,7 +1466,7 @@ export async function createVrmClaude(canvasParent) {
       // without the spectral analyzer trying to drive vowels that
       // would clash with the expression.
       toggleTimer = setInterval(() => {
-        if (stopped || audio.paused || audio.ended) return;
+        if (stopped || !started || audio.paused || audio.ended) return;
         // Re-check state — face might have flipped to neutral.
         if (isNeutralMouth()) return;
         setMouth(Math.random() < 0.5 ? 'v_e' : 'v_a');
@@ -1652,6 +1664,17 @@ export async function createVrmClaude(canvasParent) {
       animClock.getDelta();
     } else {
       animMixer.update(animClock.getDelta());
+    }
+    // Ease facial emotion weights toward their targets for smooth (non-snapping)
+    // expression transitions, then let the manager apply them.
+    if (vrm.expressionManager) {
+      for (const k of EMO_KEYS) {
+        if (emoCur[k] !== emoTgt[k]) {
+          emoCur[k] += (emoTgt[k] - emoCur[k]) * EMO_LERP;
+          if (Math.abs(emoTgt[k] - emoCur[k]) < 0.004) emoCur[k] = emoTgt[k];
+          vrm.expressionManager.setValue(k, emoCur[k]);
+        }
+      }
     }
     if (vrm.expressionManager) vrm.expressionManager.update();
     // Per-emotion tail wag. Rotate tailbase before vrm.update so the

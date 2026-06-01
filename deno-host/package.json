@@ -1,0 +1,9 @@
+{
+  "name": "claudes-body-deno-host",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Deno + tao/wry webview host for claude-says (replaces Electron shell)",
+  "dependencies": {
+    "@webviewjs/webview": "0.1.4"
+  }
+}

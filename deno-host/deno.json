@@ -1,0 +1,6 @@
+{
+  "nodeModulesDir": "manual",
+  "tasks": {
+    "start": "deno run --allow-all --node-modules-dir=manual main.js"
+  }
+}

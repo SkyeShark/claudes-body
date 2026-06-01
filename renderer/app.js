@@ -93,6 +93,7 @@ function buildVoicePrefs() {
 // ---------- speak queue ----------
 const queue = [];
 let speaking = false;
+let neutralResetTimer = null;   // reverts the face to neutral a while after speech stops
 let skipRequested = false;
 let currentSpokenText = '';
 // While the welcome line is playing, defer every other speech item so
@@ -127,9 +128,26 @@ async function speakItem({ text }) {
   const capped  = capLength(cleaned, Number(settings.lengthCap) || 0);
   if (!capped) return;
 
+  // A new line is starting — cancel any pending revert-to-neutral.
+  if (neutralResetTimer) { clearTimeout(neutralResetTimer); neutralResetTimer = null; }
+
   currentSpokenText = capped;
 
   const tone = analyzeTone(capped);
+
+  // Pre-warm the first chunk's neural synth BEFORE we react, so the talking
+  // animation + facial expression land together with the voice instead of
+  // ~1-2s ahead of it. The worker caches/coalesces, so claude.speak()'s own
+  // synth of this chunk is then an instant hit. Skip when muted.
+  if (!settings.muted) {
+    try {
+      const chunks = (window.chunkText ? window.chunkText(capped) : null) || [capped];
+      if (chunks[0] && window.cs && window.cs.ttsSynth) {
+        await window.cs.ttsSynth(chunks[0], buildVoicePrefs().gender);
+      }
+    } catch (_) {}
+  }
+
   if (tone.emotion) claude.setEmotion(tone.emotion);
   // Pick a body anim:
   //   - tone-driven gesture (greeting / victory / dismiss / etc.) if the
@@ -158,6 +176,16 @@ async function speakItem({ text }) {
   }
 
   currentSpokenText = '';
+
+  // Revert the face to neutral a few seconds after speech stops, so a
+  // tone-driven expression (surprised / happy / ...) doesn't get stuck on
+  // when there's a lull between messages.
+  if (neutralResetTimer) clearTimeout(neutralResetTimer);
+  neutralResetTimer = setTimeout(() => {
+    if (!speaking && queue.length === 0) {
+      try { claude.setEmotion('neutral'); } catch (_) {}
+    }
+  }, 4000);
 }
 
 // Cap pending speeches so a chatty session can't backlog us forever.

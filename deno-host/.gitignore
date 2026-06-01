@@ -1,0 +1,8 @@
+# Deps (installed via `npm install` — provides the native @webviewjs/webview binary)
+node_modules/
+deno.lock
+
+# Debug artifacts from development
+*.log
+pid.txt
+*.png
