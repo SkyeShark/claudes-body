@@ -1,6 +1,6 @@
 {
   "name": "claudes-body",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Claude's Body — a draggable, animated Claude that speaks Claude Code responses with tone-driven expressions. Windows runs a lightweight Deno + WebView2 host (no Electron); macOS/Linux use Electron.",
   "main": "main.js",
   "license": "MIT",
